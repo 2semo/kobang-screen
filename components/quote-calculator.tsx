@@ -1,0 +1,2074 @@
+"use client";
+
+import { useState, useCallback } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  Building2,
+  Home,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  Minus,
+  Check,
+  Copy,
+  Share2,
+  Info,
+  ArrowRight,
+} from "lucide-react";
+import {
+  brands,
+  meshTypes,
+  installTypes,
+  spaces,
+  NUMBER_KEY_PRICE,
+  CARD_BENEFITS,
+  getPrice,
+  roundUpTo100,
+  getGlassRailingPrice,
+  glassRailingPurchaseOptions,
+  glassRailingTypeOptions,
+  glassRailingWindowCountOptions,
+  getHuperOptikPrice,
+  huperOptikPurchaseOptions,
+  huperOptikSizeOptions,
+  huperOptikFilmOptions,
+  type BrandType,
+  type MeshType,
+  type InstallType,
+  type SpaceType,
+  type GlassRailingPurchaseType,
+  type GlassRailingType,
+  type GlassRailingWindowCount,
+  type HuperOptikPurchaseType,
+  type HuperOptikFilmType,
+  type HuperOptikSizeType,
+} from "@/lib/pricing-data";
+
+interface SpaceItemDetail {
+  id: string;
+  width: number;
+  height: number;
+}
+
+interface SpaceItem {
+  id: string;
+  spaceType: SpaceType;
+  count: number;
+  details: SpaceItemDetail[];
+  showSizeInput?: boolean;
+}
+
+// 견적 유형: 안전방충망, 유리난간, 후퍼옵틱
+type QuoteType = 'safetyScreen' | 'glassRailing' | 'huperOptik';
+
+interface QuoteState {
+  step: number;
+  quoteType: QuoteType | null;
+  // 안전방충망 관련
+  brand: BrandType | null;
+  installType: InstallType | null;
+  meshType: MeshType | null;
+  spaceItems: SpaceItem[];
+  numberKeyCount: number;
+  // 유리난간 관련
+  glassRailingPurchaseType: GlassRailingPurchaseType | null;
+  glassRailingType: GlassRailingType | null;
+  glassRailingWindowCount: GlassRailingWindowCount | null;
+  // 후퍼옵틱 관련
+  huperOptikPurchaseType: HuperOptikPurchaseType | null;
+  huperOptikFilmType: HuperOptikFilmType | null;
+  huperOptikSizeType: HuperOptikSizeType | null;
+}
+
+const initialState: QuoteState = {
+  step: 1,
+  quoteType: null,
+  // 안전방충망 관련
+  brand: null,
+  installType: null,
+  meshType: null,
+  spaceItems: [],
+  numberKeyCount: 0,
+  // 유리난간 관련
+  glassRailingPurchaseType: null,
+  glassRailingType: null,
+  glassRailingWindowCount: null,
+  // 후퍼옵틱 관련
+  huperOptikPurchaseType: null,
+  huperOptikFilmType: null,
+  huperOptikSizeType: null,
+};
+
+// 브랜드별, 설치유형별 사용 가능한 망타입
+const availableMeshTypes: Record<BrandType, Record<InstallType, MeshType[]>> = {
+  goguryeo: {
+    highFloor: ['0.4mm-16mesh'],
+    lowFloor: ['0.6mm'],
+  },
+  js: {
+    highFloor: ['0.4mm-16mesh', '0.4mm-20mesh'],
+    lowFloor: ['0.6mm', '0.7mm-14mesh'],
+  },
+};
+
+// 금액대별 캐시백 계산 (100만원 단위로 5%)
+function calculateAmountCashback(total: number): number {
+  const millions = Math.floor(total / 1000000);
+  return millions * 50000; // 100만원당 5만원
+}
+
+export default function QuoteCalculator() {
+  const [state, setState] = useState<QuoteState>(initialState);
+  const [copied, setCopied] = useState(false);
+
+  const updateState = useCallback((updates: Partial<QuoteState>) => {
+    setState((prev) => ({ ...prev, ...updates }));
+  }, []);
+
+  const goToStep = useCallback((step: number) => {
+    updateState({ step });
+  }, [updateState]);
+
+  const nextStep = useCallback(() => {
+    updateState({ step: state.step + 1 });
+  }, [state.step, updateState]);
+
+  const prevStep = useCallback(() => {
+    updateState({ step: state.step - 1 });
+  }, [state.step, updateState]);
+
+  // 브랜드 선택
+  const selectBrand = useCallback((brand: BrandType) => {
+    updateState({ brand, installType: null, meshType: null });
+  }, [updateState]);
+
+  // 설치 유형 선택
+  const selectInstallType = useCallback((installType: InstallType) => {
+    if (!state.brand) return;
+    const availableMeshes = availableMeshTypes[state.brand][installType];
+    // 고구려시스템은 망타입이 1개이므로 자동 선택
+    const autoMeshType = availableMeshes.length === 1 ? availableMeshes[0] : null;
+    updateState({ installType, meshType: autoMeshType });
+  }, [state.brand, updateState]);
+
+  // 망타입 선택
+  const selectMeshType = useCallback((meshType: MeshType) => {
+    updateState({ meshType });
+  }, [updateState]);
+
+  // 공간 아이템 추가/수정
+  const updateSpaceItem = useCallback((spaceType: SpaceType, count: number) => {
+    setState((prev) => {
+      const existingIndex = prev.spaceItems.findIndex(
+        (item) => item.spaceType === spaceType
+      );
+      const spaceInfo = spaces.find((s) => s.id === spaceType)!;
+
+      if (count <= 0) {
+        return {
+          ...prev,
+          spaceItems: prev.spaceItems.filter(
+            (item) => item.spaceType !== spaceType
+          ),
+        };
+      }
+
+      if (existingIndex >= 0) {
+        const existingItem = prev.spaceItems[existingIndex];
+        const currentCount = existingItem.count;
+        
+        let newDetails = [...existingItem.details];
+        
+        if (count > currentCount) {
+          // 개수 증가 - 새 항목 추가
+          for (let i = currentCount; i < count; i++) {
+            newDetails.push({
+              id: `${spaceType}-${Date.now()}-${i}`,
+              width: spaceInfo.defaultWidth,
+              height: spaceInfo.defaultHeight,
+            });
+          }
+        } else if (count < currentCount) {
+          // 개수 감소 - 뒤에서부터 제거
+          newDetails = newDetails.slice(0, count);
+        }
+
+        const newItems = [...prev.spaceItems];
+        newItems[existingIndex] = {
+          ...existingItem,
+          count,
+          details: newDetails,
+        };
+        return { ...prev, spaceItems: newItems };
+      }
+
+      // 새 항목 추가
+      const details: SpaceItemDetail[] = [];
+      for (let i = 0; i < count; i++) {
+        details.push({
+          id: `${spaceType}-${Date.now()}-${i}`,
+          width: spaceInfo.defaultWidth,
+          height: spaceInfo.defaultHeight,
+        });
+      }
+
+      return {
+        ...prev,
+        spaceItems: [
+          ...prev.spaceItems,
+          {
+            id: `${spaceType}-${Date.now()}`,
+            spaceType,
+            count,
+            details,
+          },
+        ],
+      };
+    });
+  }, []);
+
+  // 개별 사이즈 변경
+  const updateSpaceDetailSize = useCallback(
+    (spaceType: SpaceType, detailIndex: number, width: number | null, height: number | null) => {
+      setState((prev) => ({
+        ...prev,
+        spaceItems: prev.spaceItems.map((item) => {
+          if (item.spaceType !== spaceType) return item;
+          
+          const newDetails = [...item.details];
+          if (newDetails[detailIndex]) {
+            newDetails[detailIndex] = {
+              ...newDetails[detailIndex],
+              width: width ?? newDetails[detailIndex].width,
+              height: height ?? newDetails[detailIndex].height,
+            };
+          }
+          return { ...item, details: newDetails };
+        }),
+      }));
+    },
+    []
+  );
+
+  // 번호키 개수 변경
+  const updateNumberKeyCount = useCallback((count: number) => {
+    updateState({ numberKeyCount: Math.max(0, count) });
+  }, [updateState]);
+
+  // 가격 계산
+  const calculateTotal = useCallback(() => {
+    if (!state.brand || !state.meshType) return { items: [], total: 0, productTotal: 0, numberKeyTotal: 0 };
+
+    const items: Array<{
+      spaceType: SpaceType;
+      spaceName: string;
+      detailIndex: number;
+      width: number;
+      height: number;
+      unitPrice: number;
+    }> = [];
+
+    state.spaceItems.forEach((item) => {
+      const spaceInfo = spaces.find((s) => s.id === item.spaceType)!;
+      item.details.forEach((detail, index) => {
+        const price = getPrice(
+          state.brand!,
+          state.meshType!,
+          detail.width,
+          detail.height
+        );
+        items.push({
+          spaceType: item.spaceType,
+          spaceName: spaceInfo.name,
+          detailIndex: index + 1,
+          width: detail.width,
+          height: detail.height,
+          unitPrice: price || 0,
+        });
+      });
+    });
+
+    const productTotal = items.reduce((sum, item) => sum + item.unitPrice, 0);
+    const numberKeyTotal = state.numberKeyCount * NUMBER_KEY_PRICE;
+    const total = productTotal + numberKeyTotal;
+
+    return { items, productTotal, numberKeyTotal, total };
+  }, [state.brand, state.meshType, state.spaceItems, state.numberKeyCount]);
+
+  // 견적 복사
+  const copyQuote = useCallback(() => {
+    const { items, total } = calculateTotal();
+    const brandInfo = brands.find((b) => b.id === state.brand);
+    const installInfo = installTypes.find((i) => i.id === state.installType);
+    const amountCashback = calculateAmountCashback(total);
+    
+    // 제휴카드혜택가 계산 (첫 결제 할인 + 금액대별 캐시백 적용)
+    const finalPrice = total - CARD_BENEFITS.firstDiscount - amountCashback;
+    const monthlyPayment = Math.round(total / CARD_BENEFITS.installmentMonths);
+    const monthlyWithCashback = monthlyPayment - CARD_BENEFITS.monthlyCashback;
+    // 이용조건 충족 최종혜택가 = 제휴카드혜택가 - 11,000원 × 24개월
+    const totalCashbackBenefit = CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths;
+    const totalWithCashback = finalPrice - totalCashbackBenefit;
+
+    let text = `[안전방충망 견적서]\n\n`;
+    text += `브랜드: ${brandInfo?.name}\n`;
+    text += `설치유형: ${installInfo?.name} (${state.meshType})\n\n`;
+    text += `[상세 내역]\n`;
+    items.forEach((item) => {
+      text += `- ${item.spaceName} ${item.detailIndex} (${item.width}×${item.height}mm): ${item.unitPrice.toLocaleString()}원\n`;
+    });
+    if (state.numberKeyCount > 0) {
+      text += `- 번호키: ${NUMBER_KEY_PRICE.toLocaleString()}원 × ${state.numberKeyCount}개 = ${(NUMBER_KEY_PRICE * state.numberKeyCount).toLocaleString()}원\n`;
+    }
+    text += `\n*총 시공 견적: ${total.toLocaleString()}원\n`;
+    
+    text += `\n[제휴카드혜택 내역]\n`;
+    text += `첫 결제 할인: -${CARD_BENEFITS.firstDiscount.toLocaleString()}원\n`;
+    if (amountCashback > 0) {
+      text += `금액대별 캐시백 (${Math.floor(total / 1000000)}00만원 구간): -${amountCashback.toLocaleString()}원\n`;
+    }
+    text += `*제휴카드 혜택가: ${finalPrice.toLocaleString()}원\n`;
+    
+    text += `\n[이용조건 충족시]\n`;
+    text += `${CARD_BENEFITS.installmentMonths}개월 무이자 할부 + 매월 30만원 사용시 ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백\n`;
+    text += `(사용 5대가전 수리비 연장보험 5만원 가입시 혜택)\n`;
+    text += `월 ${monthlyPayment.toLocaleString()}원 - ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원\n`;
+    text += `최종 월 부담금: ${monthlyWithCashback.toLocaleString()}원\n\n`;
+    text += `*이용조건 충족 최종혜택가: ${totalWithCashback.toLocaleString()}원\n`;
+    text += `(제휴카드혜택가 - ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원 × ${CARD_BENEFITS.installmentMonths}개월)\n`;
+    
+    text += `\n[안내사항]\n`;
+    text += `• 최종 금액은 방문 실측 후 확정될 수 있습니다.\n`;
+    text += `• 특수 창호/사이즈는 별도 실측후 견적 가능(기본가격은 슬라이딩 도어)\n`;
+    text += `• 설치수량 2개 이하 / 지역에 따라서 추가 출장비 발생할수도 있습니다.\n`;
+    text += `• 모든 계산은 100mm(10cm) 단위 올림이 적용됩니다.\n`;
+    text += `• 캐시백 및 할인 혜택은 카드사 정책에 따라 변경될 수 있습니다.\n`;
+    text += `\n문의: 코끼리시스템 1555-0143`;
+
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [calculateTotal, state.brand, state.installType, state.meshType, state.numberKeyCount]);
+
+  // 카카오톡 공유
+  const shareKakao = useCallback(() => {
+    alert("카카오톡 공유 기능은 실제 서비스에서 구현됩니다.");
+  }, []);
+
+  // 공간별 개수 가져오기
+  const getSpaceCount = (spaceType: SpaceType) => {
+    const item = state.spaceItems.find((i) => i.spaceType === spaceType);
+    return item?.count || 0;
+  };
+
+  // 공간별 상세 정보 가져오기
+  const getSpaceDetails = (spaceType: SpaceType) => {
+    const item = state.spaceItems.find((i) => i.spaceType === spaceType);
+    return item?.details || [];
+  };
+
+  // 실측사이즈 입력 토글
+  const toggleSizeInput = useCallback((spaceType: SpaceType) => {
+    setState((prev) => ({
+      ...prev,
+      spaceItems: prev.spaceItems.map((item) => {
+        if (item.spaceType !== spaceType) return item;
+        return { ...item, showSizeInput: !item.showSizeInput };
+      }),
+    }));
+  }, []);
+
+  // 공간별 실측사이즈 입력 표시 여부
+  const getShowSizeInput = (spaceType: SpaceType) => {
+    const item = state.spaceItems.find((i) => i.spaceType === spaceType);
+    return item?.showSizeInput || false;
+  };
+
+  // 다음 버튼 활성화 여부
+  const canProceed = () => {
+    switch (state.step) {
+      case 1:
+        return true;
+      case 2:
+        return state.brand !== null;
+      case 3:
+        return state.installType !== null && state.meshType !== null;
+      case 4:
+        return state.spaceItems.length > 0;
+      case 5:
+        return true;
+      default:
+        return false;
+    }
+  };
+
+  // 현재 브랜드와 설치유형에 따른 사용 가능한 망타입
+  const getAvailableMeshTypes = () => {
+    if (!state.brand || !state.installType) return [];
+    return availableMeshTypes[state.brand][state.installType];
+  };
+
+  // 망타입 정보 가져오기
+  const getMeshTypeInfo = (meshType: MeshType) => {
+    if (!state.brand) return null;
+    return meshTypes[state.brand].find((m) => m.id === meshType);
+  };
+
+  // 렌더링
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-background to-secondary/30">
+      {/* 헤더 */}
+      <header className="sticky top-0 z-50 bg-background/95 backdrop-blur border-b">
+        <div className="max-w-lg mx-auto px-4 py-2 flex items-center justify-between">
+          <div className="flex items-center gap-0">
+            <img
+              src="/elephant-logo2.png"
+              alt="코끼리시스템 로고"
+              className="h-16 w-auto"
+            />
+            <span className="font-bold text-lg leading-tight -ml-1">코끼리시스템</span>
+          </div>
+          <a
+            href="tel:1555-0143"
+            className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-4 py-3 rounded-lg text-base font-bold hover:bg-primary/90 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>
+            </svg>
+            1555-0143
+          </a>
+        </div>
+      </header>
+
+      <main className="max-w-lg mx-auto px-4 py-6">
+        {/* 진행 상태 - 안전방충망 */}
+        {state.step > 1 && state.step < 6 && state.quoteType === 'safetyScreen' && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-muted-foreground">
+                단계 {state.step}/6
+              </span>
+              <span className="text-sm font-medium text-primary">
+                {Math.round(((state.step - 1) / 5) * 100)}%
+              </span>
+            </div>
+            <div className="h-2 bg-secondary rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary transition-all duration-300"
+                style={{ width: `${((state.step - 1) / 5) * 100}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* 진행 상태 - 유리난간 */}
+        {state.step === 2 && state.quoteType === 'glassRailing' && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-muted-foreground">
+                단계 1/2
+              </span>
+              <span className="text-sm font-medium text-primary">
+                50%
+              </span>
+            </div>
+            <div className="h-2 bg-secondary rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary transition-all duration-300"
+                style={{ width: '50%' }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* 진행 상태 - 후퍼옵틱 */}
+        {state.step === 2 && state.quoteType === 'huperOptik' && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-muted-foreground">
+                단계 1/2
+              </span>
+              <span className="text-sm font-medium text-primary">
+                50%
+              </span>
+            </div>
+            <div className="h-2 bg-secondary rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary transition-all duration-300"
+                style={{ width: '50%' }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Step 1: 인트로 - 견적 유형 선택 */}
+        {state.step === 1 && (
+          <div className="space-y-6 py-4">
+            {/* 메인 이미지 */}
+            <div className="rounded-xl overflow-hidden shadow-lg">
+              <img
+                src="https://assets.macaly-user-data.dev/cdn-cgi/image/format=webp,width=2000,height=2000,fit=scale-down,quality=90,anim=true/r4r4vwy5v410dggz3f492h5c/rmynog90h4yzrxhq943q6ddz/hkoW5ZD8N9a2Pqwhbhhzp.png"
+                alt="후퍼옵틱 열차단필름 공동구매 - 코끼리시스템"
+                className="w-full h-auto"
+              />
+            </div>
+
+            <div className="text-center space-y-3">
+              <p className="text-muted-foreground leading-relaxed">
+                창문 안전, 견적부터 간단히 계산해보세요.
+                <br />
+                대표 사이즈로 <strong className="text-foreground">3분 안에</strong> 빠르게 계산하고,
+                <br />
+                실측값을 입력하면 더 정확한 예상 견적을 볼 수 있어요.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <Button
+                onClick={() => {
+                  updateState({ quoteType: 'safetyScreen' });
+                  nextStep();
+                }}
+                className="w-full h-14 text-lg font-semibold"
+                size="lg"
+              >
+                안전방충망 견적받기
+                <ArrowRight className="w-5 h-5 ml-2" />
+              </Button>
+              <Button
+                onClick={() => {
+                  updateState({ quoteType: 'glassRailing' });
+                  nextStep();
+                }}
+                variant="outline"
+                className="w-full h-14 text-lg font-semibold border-primary text-primary hover:bg-primary hover:text-primary-foreground"
+                size="lg"
+              >
+                아파트유리난간 견적받기
+                <ArrowRight className="w-5 h-5 ml-2" />
+              </Button>
+              <Button
+                onClick={() => {
+                  updateState({ quoteType: 'huperOptik' });
+                  nextStep();
+                }}
+                variant="outline"
+                className="w-full h-14 text-lg font-semibold border-primary text-primary hover:bg-primary hover:text-primary-foreground"
+                size="lg"
+              >
+                후퍼옵틱 필름 견적받기
+                <ArrowRight className="w-5 h-5 ml-2" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 2: 안전방충망 - 브랜드 선택 */}
+        {state.step === 2 && state.quoteType === 'safetyScreen' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-bold mb-2">브랜드 선택</h2>
+              <p className="text-muted-foreground">
+                원하시는 브랜드를 선택해주세요
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              {brands.map((brand) => (
+                <Card
+                  key={brand.id}
+                  className={`cursor-pointer transition-all ${
+                    state.brand === brand.id
+                      ? "ring-2 ring-primary border-primary"
+                      : "hover:border-primary/50"
+                  }`}
+                  onClick={() => selectBrand(brand.id)}
+                >
+                  <CardContent className="p-5">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <h3 className="font-bold text-lg">{brand.name}</h3>
+                        <p className="text-sm text-muted-foreground">
+                          {brand.description}
+                        </p>
+                      </div>
+                      {state.brand === brand.id && (
+                        <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+                          <Check className="w-4 h-4 text-primary-foreground" />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {brand.features.slice(0, 4).map((feature) => (
+                        <Badge key={feature} variant="secondary" className="text-xs">
+                          {feature}
+                        </Badge>
+                      ))}
+                    </div>
+                    <p className="text-sm text-primary font-medium">
+                      {brand.highlight}
+                    </p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <Button variant="outline" onClick={prevStep} className="flex-1">
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                이전
+              </Button>
+              <Button
+                onClick={nextStep}
+                disabled={!canProceed()}
+                className="flex-1"
+              >
+                다음
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 2: 유리난간 - 옵션 선택 */}
+        {state.step === 2 && state.quoteType === 'glassRailing' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-bold mb-2">유리난간 옵션 선택</h2>
+              <p className="text-muted-foreground">
+                구매방식, 타입, 거실창수를 선택해주세요
+              </p>
+            </div>
+
+            {/* 구매방식 선택 */}
+            <div className="space-y-3">
+              <h3 className="font-bold">구매방식</h3>
+              <div className="space-y-3">
+                {glassRailingPurchaseOptions.map((option) => (
+                  <Card
+                    key={option.id}
+                    className={`cursor-pointer transition-all ${
+                      state.glassRailingPurchaseType === option.id
+                        ? "ring-2 ring-primary border-primary"
+                        : "hover:border-primary/50"
+                    }`}
+                    onClick={() => updateState({ glassRailingPurchaseType: option.id })}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-bold">{option.name}</h4>
+                          <Badge variant="outline" className="mt-1 text-xs">
+                            {option.subtitle}
+                          </Badge>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            {option.description}
+                          </p>
+                        </div>
+                        {state.glassRailingPurchaseType === option.id && (
+                          <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+                            <Check className="w-4 h-4 text-primary-foreground" />
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+
+            {/* 타입 선택 */}
+            <div className="space-y-3">
+              <h3 className="font-bold">타입 선택</h3>
+              <div className="space-y-3">
+                {glassRailingTypeOptions.map((option) => (
+                  <Card
+                    key={option.id}
+                    className={`cursor-pointer transition-all ${
+                      state.glassRailingType === option.id
+                        ? "ring-2 ring-primary border-primary"
+                        : "hover:border-primary/50"
+                    }`}
+                    onClick={() => updateState({ glassRailingType: option.id })}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-bold text-sm">{option.name}</h4>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            {option.description}
+                          </p>
+                        </div>
+                        {state.glassRailingType === option.id && (
+                          <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
+                            <Check className="w-4 h-4 text-primary-foreground" />
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+
+            {/* 거실창수 선택 */}
+            <div className="space-y-3">
+              <h3 className="font-bold">거실창수 선택</h3>
+              <div className="grid grid-cols-2 gap-3">
+                {glassRailingWindowCountOptions.map((option) => (
+                  <Card
+                    key={option.id}
+                    className={`cursor-pointer transition-all ${
+                      state.glassRailingWindowCount === option.id
+                        ? "ring-2 ring-primary border-primary"
+                        : "hover:border-primary/50"
+                    }`}
+                    onClick={() => updateState({ glassRailingWindowCount: option.id })}
+                  >
+                    <CardContent className="p-4 text-center">
+                      <h4 className="font-bold text-lg">{option.name}</h4>
+                      <p className="text-sm text-muted-foreground">
+                        {option.description}
+                      </p>
+                      {state.glassRailingWindowCount === option.id && (
+                        <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center mx-auto mt-2">
+                          <Check className="w-4 h-4 text-primary-foreground" />
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <Button variant="outline" onClick={prevStep} className="flex-1">
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                이전
+              </Button>
+              <Button
+                onClick={() => goToStep(3)}
+                disabled={!state.glassRailingPurchaseType || !state.glassRailingType || !state.glassRailingWindowCount}
+                className="flex-1"
+              >
+                견적 확인
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 2: 후퍼옵틱 - 옵션 선택 */}
+        {state.step === 2 && state.quoteType === 'huperOptik' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-bold mb-2">후퍼옵틱 열차단필름 옵션 선택</h2>
+              <p className="text-muted-foreground">
+                구매방식, 평형, 필름 타입을 선택해주세요
+              </p>
+            </div>
+
+            {/* 구매방식 선택 */}
+            <div className="space-y-3">
+              <h3 className="font-bold">구매방식</h3>
+              <div className="space-y-3">
+                {huperOptikPurchaseOptions.map((option) => (
+                  <Card
+                    key={option.id}
+                    className={`cursor-pointer transition-all ${
+                      state.huperOptikPurchaseType === option.id
+                        ? "ring-2 ring-primary border-primary"
+                        : "hover:border-primary/50"
+                    }`}
+                    onClick={() => updateState({ huperOptikPurchaseType: option.id })}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-bold">{option.name}</h4>
+                          <Badge variant="outline" className="mt-1 text-xs">
+                            {option.subtitle}
+                          </Badge>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            {option.description}
+                          </p>
+                        </div>
+                        {state.huperOptikPurchaseType === option.id && (
+                          <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+                            <Check className="w-4 h-4 text-primary-foreground" />
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+
+            {/* 평형 선택 */}
+            <div className="space-y-3">
+              <h3 className="font-bold">평형 선택</h3>
+              <div className="grid grid-cols-3 gap-3">
+                {huperOptikSizeOptions.map((option) => (
+                  <Card
+                    key={option.id}
+                    className={`cursor-pointer transition-all ${
+                      state.huperOptikSizeType === option.id
+                        ? "ring-2 ring-primary border-primary"
+                        : "hover:border-primary/50"
+                    }`}
+                    onClick={() => updateState({ huperOptikSizeType: option.id })}
+                  >
+                    <CardContent className="p-3 text-center">
+                      <h4 className="font-bold text-sm">{option.name}</h4>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {option.description}
+                      </p>
+                      {state.huperOptikSizeType === option.id && (
+                        <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center mx-auto mt-2">
+                          <Check className="w-3 h-3 text-primary-foreground" />
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                단, 주상복합이나 이면창이 있는경우 추가요금이 발생할 수 있습니다.<br />
+                전용 84초과 타입은 실측을 통한 견적이 가능합니다.
+              </p>
+            </div>
+
+            {/* 필름 타입 선택 */}
+            <div className="space-y-3">
+              <h3 className="font-bold">후퍼옵틱 열차단필름 선택</h3>
+              <div className="space-y-3">
+                {huperOptikFilmOptions.map((option) => (
+                  <Card
+                    key={option.id}
+                    className={`cursor-pointer transition-all ${
+                      state.huperOptikFilmType === option.id
+                        ? "ring-2 ring-primary border-primary"
+                        : "hover:border-primary/50"
+                    }`}
+                    onClick={() => updateState({ huperOptikFilmType: option.id })}
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="font-bold text-sm">{option.name}</h4>
+                          <Badge variant="outline" className="mt-1 text-xs">
+                            {option.subtitle}
+                          </Badge>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            &lt;{option.description}&gt;
+                          </p>
+                        </div>
+                        {state.huperOptikFilmType === option.id && (
+                          <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
+                            <Check className="w-4 h-4 text-primary-foreground" />
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <Button variant="outline" onClick={prevStep} className="flex-1">
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                이전
+              </Button>
+              <Button
+                onClick={() => goToStep(3)}
+                disabled={!state.huperOptikPurchaseType || !state.huperOptikSizeType || !state.huperOptikFilmType}
+                className="flex-1"
+              >
+                견적 확인
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: 유리난간 - 견적 결과 */}
+        {state.step === 3 && state.quoteType === 'glassRailing' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-bold mb-2">견적 결과</h2>
+              <p className="text-muted-foreground">
+                아파트 유리난간 견적
+              </p>
+            </div>
+
+            {(() => {
+              const total = state.glassRailingPurchaseType && state.glassRailingType && state.glassRailingWindowCount
+                ? getGlassRailingPrice(state.glassRailingPurchaseType, state.glassRailingType, state.glassRailingWindowCount)
+                : 0;
+              const amountCashback = calculateAmountCashback(total);
+              const finalPrice = total - CARD_BENEFITS.firstDiscount - amountCashback;
+              const monthlyPayment = Math.round(total / CARD_BENEFITS.installmentMonths);
+              const monthlyWithCashback = monthlyPayment - CARD_BENEFITS.monthlyCashback;
+              const totalWithCashback = finalPrice - (CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths);
+
+              const purchaseTypeInfo = glassRailingPurchaseOptions.find(o => o.id === state.glassRailingPurchaseType);
+              const railingTypeInfo = glassRailingTypeOptions.find(o => o.id === state.glassRailingType);
+              const windowCountInfo = glassRailingWindowCountOptions.find(o => o.id === state.glassRailingWindowCount);
+
+              return (
+                <>
+                  <Card>
+                    <CardContent className="p-5 space-y-4">
+                      <div className="text-center pb-4 border-b">
+                        <p className="text-sm text-muted-foreground mb-1">
+                          예상 견적 결과
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          정확한 최종 견적은 방문 실측 후 확정됩니다. (예상 견적은 참고용)
+                        </p>
+                      </div>
+
+                      <div className="space-y-3">
+                        <h4 className="font-bold text-sm">선택 내역</h4>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">구매방식</span>
+                            <span className="font-medium">{purchaseTypeInfo?.name}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">타입</span>
+                            <span className="font-medium text-right">{railingTypeInfo?.name}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">거실창수</span>
+                            <span className="font-medium">{windowCountInfo?.name}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-between pt-3 border-t">
+                        <span className="font-bold">총 시공 견적</span>
+                        <span className="font-bold text-lg">
+                          {total.toLocaleString()}원
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="bg-primary/5 border-primary/20">
+                    <CardContent className="p-5 space-y-4">
+                      <h4 className="font-bold">제휴카드혜택 내역</h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">첫 결제 할인</span>
+                          <span className="text-destructive font-medium">
+                            -{CARD_BENEFITS.firstDiscount.toLocaleString()}원
+                          </span>
+                        </div>
+                        {amountCashback > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">
+                              금액대별 캐시백 ({Math.floor(total / 1000000)}00만원 구간)
+                            </span>
+                            <span className="text-destructive font-medium">
+                              -{amountCashback.toLocaleString()}원
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex justify-between items-center pt-3 border-t">
+                          <span className="text-lg font-bold">제휴카드 혜택가</span>
+                          <span className="text-2xl font-bold text-primary">
+                            {finalPrice.toLocaleString()}원
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-background rounded-lg space-y-3">
+                        <div className="text-center">
+                          <p className="text-xs text-muted-foreground">
+                            {CARD_BENEFITS.installmentMonths}개월 무이자 할부 + 매월 30만원 사용시{" "}
+                            {CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백
+                          </p>
+                          <p className="text-[10px] text-muted-foreground/70">
+                            (사용 5대가전 수리비 연장보험 5만원 가입시 혜택)
+                          </p>
+                        </div>
+                        <div className="flex items-center justify-center gap-2 text-lg">
+                          <span>월</span>
+                          <span className="font-bold">
+                            {monthlyPayment.toLocaleString()}원
+                          </span>
+                          <span>-</span>
+                          <span className="text-destructive">
+                            {CARD_BENEFITS.monthlyCashback.toLocaleString()}원
+                          </span>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-sm text-muted-foreground">최종 월 부담금</p>
+                          <p className="text-2xl font-bold text-primary">
+                            {monthlyWithCashback.toLocaleString()}원
+                          </p>
+                        </div>
+                        <div className="pt-3 border-t">
+                          <div className="flex items-center justify-center gap-4">
+                            <div className="text-left">
+                              <p className="text-xs text-muted-foreground">이용조건 충족</p>
+                              <p className="text-lg font-bold text-foreground">최종혜택가</p>
+                            </div>
+                            <p className="text-3xl font-bold text-primary">
+                              {totalWithCashback.toLocaleString()}원
+                            </p>
+                          </div>
+                          <p className="text-xs text-muted-foreground text-center mt-1">
+                            (제휴카드혜택가 - {CARD_BENEFITS.monthlyCashback.toLocaleString()}원 × {CARD_BENEFITS.installmentMonths}개월)
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <div className="flex gap-3">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => {
+                        const purchaseTypeInfo = glassRailingPurchaseOptions.find(o => o.id === state.glassRailingPurchaseType);
+                        const railingTypeInfo = glassRailingTypeOptions.find(o => o.id === state.glassRailingType);
+                        const windowCountInfo = glassRailingWindowCountOptions.find(o => o.id === state.glassRailingWindowCount);
+                        
+                        let text = `[고구려 파노라마 유리난간 견적서]\n\n`;
+                        text += `구매방식: ${purchaseTypeInfo?.name}\n`;
+                        text += `타입: ${railingTypeInfo?.name}\n`;
+                        text += `거실창수: ${windowCountInfo?.name}\n\n`;
+                        text += `*총 시공 견적: ${total.toLocaleString()}원\n`;
+                        text += `\n[제휴카드혜택 내역]\n`;
+                        text += `첫 결제 할인: -${CARD_BENEFITS.firstDiscount.toLocaleString()}원\n`;
+                        if (amountCashback > 0) {
+                          text += `금액대별 캐시백 (${Math.floor(total / 1000000)}00만원 구간): -${amountCashback.toLocaleString()}원\n`;
+                        }
+                        text += `*제휴카드 혜택가: ${finalPrice.toLocaleString()}원\n`;
+                        text += `\n[이용조건 충족시]\n`;
+                        text += `${CARD_BENEFITS.installmentMonths}개월 무이자 할부 + 매월 30만원 사용시 ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백\n`;
+                        text += `(사용 5대가전 수리비 연장보험 5만원 가입시 혜택)\n`;
+                        text += `월 ${monthlyPayment.toLocaleString()}원 - ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원\n`;
+                        text += `최종 월 부담금: ${monthlyWithCashback.toLocaleString()}원\n\n`;
+                        text += `*이용조건 충족 최종혜택가: ${totalWithCashback.toLocaleString()}원\n`;
+                        text += `(제휴카드혜택가 - ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원 × ${CARD_BENEFITS.installmentMonths}개월)\n`;
+                        text += `\n[견적 포함사항]\n`;
+                        text += `• 고구려 안전방충망(0.4mm) 설치 포함\n`;
+                        text += `• 고구려 안전방충망, 행위허가 대행비용, 입주민동의서 대행비용, 부가세가 모두 포함된 금액입니다.\n`;
+                        text += `\n[안내사항]\n`;
+                        text += `• 최종 금액은 방문 실측 후 확정될 수 있습니다.\n`;
+                        text += `• 공동구매는 같은 아파트 단지 내 3세대 이상 함께 시공시 적용됩니다.\n`;
+                        text += `• 입면분할창은 현장에 따라 금액 변동이 있을 수 있으며, 방추가 할인은 적용되지 않습니다.\n`;
+                        text += `• 캐시백 및 할인 혜택은 카드사 정책에 따라 변경될 수 있습니다.\n`;
+                        text += `\n문의: 코끼리시스템 1555-0143`;
+                        
+                        navigator.clipboard.writeText(text);
+                        setCopied(true);
+                        setTimeout(() => setCopied(false), 2000);
+                      }}
+                    >
+                      {copied ? (
+                        <Check className="w-4 h-4 mr-2" />
+                      ) : (
+                        <Copy className="w-4 h-4 mr-2" />
+                      )}
+                      {copied ? "복사됨" : "견적 복사"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={shareKakao}
+                    >
+                      <Share2 className="w-4 h-4 mr-2" />
+                      카톡 공유
+                    </Button>
+                  </div>
+
+                  {/* 견적 포함사항 */}
+                  <Card className="bg-primary/10 border-primary/30">
+                    <CardContent className="p-4">
+                      <h4 className="font-bold text-base mb-3 text-primary">견적 포함사항</h4>
+                      <ul className="text-sm space-y-2">
+                        <li className="flex items-start gap-2">
+                          <Check className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                          <span className="font-medium">고구려 안전방충망(0.4mm) 설치 포함</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <Check className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                          <span>고구려 안전방충망, 행위허가 대행비용, 입주민동의서 대행비용, 부가세가 모두 포함된 금액입니다.</span>
+                        </li>
+                      </ul>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="bg-secondary/50">
+                    <CardContent className="p-4">
+                      <h4 className="font-bold text-sm mb-2">안내 사항</h4>
+                      <ul className="text-xs text-muted-foreground space-y-1">
+                        <li>• 최종 금액은 방문 실측 후 확정될 수 있습니다.</li>
+                        <li>• 공동구매는 같은 아파트 단지 내 3세대 이상 함께 시공시 적용됩니다.</li>
+                        <li>• 입면분할창은 현장에 따라 금액 변동이 있을 수 있으며, 방추가 할인은 적용되지 않습니다.</li>
+                        <li>• 캐시백 및 할인 혜택은 카드사 정책에 따라 변경될 수 있습니다.</li>
+                      </ul>
+                    </CardContent>
+                  </Card>
+
+                  <div className="flex gap-3">
+                    <Button
+                      variant="outline"
+                      onClick={() => goToStep(1)}
+                      className="flex-1"
+                    >
+                      처음으로
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={prevStep}
+                      className="flex-1"
+                    >
+                      <ChevronLeft className="w-4 h-4 mr-1" />
+                      수정하기
+                    </Button>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* Step 3: 후퍼옵틱 - 견적 결과 */}
+        {state.step === 3 && state.quoteType === 'huperOptik' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-bold mb-2">견적 결과</h2>
+              <p className="text-muted-foreground">
+                후퍼옵틱 열차단필름 견적
+              </p>
+            </div>
+
+            {(() => {
+              const total = state.huperOptikPurchaseType && state.huperOptikFilmType && state.huperOptikSizeType
+                ? getHuperOptikPrice(state.huperOptikPurchaseType, state.huperOptikFilmType, state.huperOptikSizeType)
+                : 0;
+              const amountCashback = calculateAmountCashback(total);
+              const finalPrice = total - CARD_BENEFITS.firstDiscount - amountCashback;
+              const monthlyPayment = Math.round(total / CARD_BENEFITS.installmentMonths);
+              const monthlyWithCashback = monthlyPayment - CARD_BENEFITS.monthlyCashback;
+              const totalWithCashback = finalPrice - (CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths);
+
+              const purchaseTypeInfo = huperOptikPurchaseOptions.find(o => o.id === state.huperOptikPurchaseType);
+              const filmTypeInfo = huperOptikFilmOptions.find(o => o.id === state.huperOptikFilmType);
+              const sizeTypeInfo = huperOptikSizeOptions.find(o => o.id === state.huperOptikSizeType);
+
+              return (
+                <>
+                  <Card>
+                    <CardContent className="p-5 space-y-4">
+                      <div className="text-center pb-4 border-b">
+                        <p className="text-sm text-muted-foreground mb-1">
+                          예상 견적 결과
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          정확한 최종 견적은 방문 실측 후 확정됩니다. (예상 견적은 참고용)
+                        </p>
+                      </div>
+
+                      <div className="space-y-3">
+                        <h4 className="font-bold text-sm">선택 내역</h4>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">구매방식</span>
+                            <span className="font-medium">{purchaseTypeInfo?.name}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">평형</span>
+                            <span className="font-medium">{sizeTypeInfo?.name}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">필름타입</span>
+                            <span className="font-medium text-right">{filmTypeInfo?.name}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">보증기간</span>
+                            <span className="font-medium">{filmTypeInfo?.subtitle}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-between pt-3 border-t">
+                        <span className="font-bold">총 시공 견적</span>
+                        <span className="font-bold text-lg">
+                          {total.toLocaleString()}원
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="bg-primary/5 border-primary/20">
+                    <CardContent className="p-5 space-y-4">
+                      <h4 className="font-bold">제휴카드혜택 내역</h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">첫 결제 할인</span>
+                          <span className="text-destructive font-medium">
+                            -{CARD_BENEFITS.firstDiscount.toLocaleString()}원
+                          </span>
+                        </div>
+                        {amountCashback > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">
+                              금액대별 캐시백 ({Math.floor(total / 1000000)}00만원 구간)
+                            </span>
+                            <span className="text-destructive font-medium">
+                              -{amountCashback.toLocaleString()}원
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex justify-between items-center pt-3 border-t">
+                          <span className="text-lg font-bold">제휴카드 혜택가</span>
+                          <span className="text-2xl font-bold text-primary">
+                            {finalPrice.toLocaleString()}원
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-background rounded-lg space-y-3">
+                        <div className="text-center">
+                          <p className="text-xs text-muted-foreground">
+                            {CARD_BENEFITS.installmentMonths}개월 무이자 할부 + 매월 30만원 사용시{" "}
+                            {CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백
+                          </p>
+                          <p className="text-[10px] text-muted-foreground/70">
+                            (사용 5대가전 수리비 연장보험 5만원 가입시 혜택)
+                          </p>
+                        </div>
+                        <div className="flex items-center justify-center gap-2 text-lg">
+                          <span>월</span>
+                          <span className="font-bold">
+                            {monthlyPayment.toLocaleString()}원
+                          </span>
+                          <span>-</span>
+                          <span className="text-destructive">
+                            {CARD_BENEFITS.monthlyCashback.toLocaleString()}원
+                          </span>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-sm text-muted-foreground">최종 월 부담금</p>
+                          <p className="text-2xl font-bold text-primary">
+                            {monthlyWithCashback.toLocaleString()}원
+                          </p>
+                        </div>
+                        <div className="pt-3 border-t">
+                          <div className="flex items-center justify-center gap-4">
+                            <div className="text-left">
+                              <p className="text-xs text-muted-foreground">이용조건 충족</p>
+                              <p className="text-lg font-bold text-foreground">최종혜택가</p>
+                            </div>
+                            <p className="text-3xl font-bold text-primary">
+                              {totalWithCashback.toLocaleString()}원
+                            </p>
+                          </div>
+                          <p className="text-xs text-muted-foreground text-center mt-1">
+                            (제휴카드혜택가 - {CARD_BENEFITS.monthlyCashback.toLocaleString()}원 × {CARD_BENEFITS.installmentMonths}개월)
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <div className="flex gap-3">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => {
+                        let text = `[후퍼옵틱 열차단필름 견적서]\n\n`;
+                        text += `구매방식: ${purchaseTypeInfo?.name}\n`;
+                        text += `평형: ${sizeTypeInfo?.name}\n`;
+                        text += `필름타입: ${filmTypeInfo?.name}\n`;
+                        text += `보증기간: ${filmTypeInfo?.subtitle}\n\n`;
+                        text += `*총 시공 견적: ${total.toLocaleString()}원\n`;
+                        text += `\n[제휴카드혜택 내역]\n`;
+                        text += `첫 결제 할인: -${CARD_BENEFITS.firstDiscount.toLocaleString()}원\n`;
+                        if (amountCashback > 0) {
+                          text += `금액대별 캐시백 (${Math.floor(total / 1000000)}00만원 구간): -${amountCashback.toLocaleString()}원\n`;
+                        }
+                        text += `*제휴카드 혜택가: ${finalPrice.toLocaleString()}원\n`;
+                        text += `\n[이용조건 충족시]\n`;
+                        text += `${CARD_BENEFITS.installmentMonths}개월 무이자 할부 + 매월 30만원 사용시 ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백\n`;
+                        text += `(사용 5대가전 수리비 연장보험 5만원 가입시 혜택)\n`;
+                        text += `월 ${monthlyPayment.toLocaleString()}원 - ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원\n`;
+                        text += `최종 월 부담금: ${monthlyWithCashback.toLocaleString()}원\n\n`;
+                        text += `*이용조건 충족 최종혜택가: ${totalWithCashback.toLocaleString()}원\n`;
+                        text += `(제휴카드혜택가 - ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원 × ${CARD_BENEFITS.installmentMonths}개월)\n`;
+                        text += `\n[안내사항]\n`;
+                        text += `• 최종 금액은 방문 실측 후 확정될 수 있습니다.\n`;
+                        text += `• 공동구매는 같은 아파트 단지 내 3세대 이상 함께 시공시 적용됩니다.\n`;
+                        text += `• 단, 주상복합이나 이면창이 있는경우 추가요금이 발생할 수 있습니다.\n`;
+                        text += `• 전용 84초과 타입은 실측을 통한 견적이 가능합니다.\n`;
+                        text += `• 캐시백 및 할인 혜택은 카드사 정책에 따라 변경될 수 있습니다.\n`;
+                        text += `\n문의: 코끼리시스템 1555-0143`;
+                        
+                        navigator.clipboard.writeText(text);
+                        setCopied(true);
+                        setTimeout(() => setCopied(false), 2000);
+                      }}
+                    >
+                      {copied ? (
+                        <Check className="w-4 h-4 mr-2" />
+                      ) : (
+                        <Copy className="w-4 h-4 mr-2" />
+                      )}
+                      {copied ? "복사됨" : "견적 복사"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={shareKakao}
+                    >
+                      <Share2 className="w-4 h-4 mr-2" />
+                      카톡 공유
+                    </Button>
+                  </div>
+
+                  <Card className="bg-secondary/50">
+                    <CardContent className="p-4">
+                      <h4 className="font-bold text-sm mb-2">안내 사항</h4>
+                      <ul className="text-xs text-muted-foreground space-y-1">
+                        <li>• 최종 금액은 방문 실측 후 확정될 수 있습니다.</li>
+                        <li>• 공동구매는 같은 아파트 단지 내 3세대 이상 함께 시공시 적용됩니다.</li>
+                        <li>• 단, 주상복합이나 이면창이 있는경우 추가요금이 발생할 수 있습니다.</li>
+                        <li>• 전용 84초과 타입은 실측을 통한 견적이 가능합니다.</li>
+                        <li>• 캐시백 및 할인 혜택은 카드사 정책에 따라 변경될 수 있습니다.</li>
+                      </ul>
+                    </CardContent>
+                  </Card>
+
+                  <div className="flex gap-3">
+                    <Button
+                      variant="outline"
+                      onClick={() => goToStep(1)}
+                      className="flex-1"
+                    >
+                      처음으로
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={prevStep}
+                      className="flex-1"
+                    >
+                      <ChevronLeft className="w-4 h-4 mr-1" />
+                      수정하기
+                    </Button>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* Step 3: 안전방충망 - 설치환경 및 망타입 선택 */}
+        {state.step === 3 && state.quoteType === 'safetyScreen' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-bold mb-2">설치환경 선택</h2>
+              <p className="text-muted-foreground">
+                설치 환경에 맞는 옵션을 선택해주세요
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              {installTypes.map((install) => (
+                <Card
+                  key={install.id}
+                  className={`cursor-pointer transition-all ${
+                    state.installType === install.id
+                      ? "ring-2 ring-primary border-primary"
+                      : "hover:border-primary/50"
+                  }`}
+                  onClick={() => selectInstallType(install.id)}
+                >
+                  <CardContent className="p-5">
+                    <div className="flex items-start gap-4">
+                      <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                        {install.id === "lowFloor" ? (
+                          <Home className="w-6 h-6 text-primary" />
+                        ) : (
+                          <Building2 className="w-6 h-6 text-primary" />
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h3 className="font-bold">{install.name}</h3>
+                            <Badge variant="outline" className="mt-1">
+                              {install.subtitle}
+                            </Badge>
+                          </div>
+                          {state.installType === install.id && (
+                            <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+                              <Check className="w-4 h-4 text-primary-foreground" />
+                            </div>
+                          )}
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-2">
+                          {install.description}
+                        </p>
+                        <p className="text-sm text-primary font-medium mt-2">
+                          {install.recommendation}
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {/* 망타입 선택 (설치유형 선택 후 표시) */}
+            {state.installType && getAvailableMeshTypes().length > 1 && (
+              <div className="space-y-4 pt-4 border-t">
+                <div>
+                  <h3 className="font-bold mb-2">망 타입 선택</h3>
+                  <p className="text-sm text-muted-foreground">
+                    {brands.find((b) => b.id === state.brand)?.name}에서 선택 가능한 망 타입입니다
+                  </p>
+                </div>
+                <div className="space-y-3">
+                  {getAvailableMeshTypes().map((meshType) => {
+                    const meshInfo = getMeshTypeInfo(meshType);
+                    if (!meshInfo) return null;
+                    return (
+                      <Card
+                        key={meshType}
+                        className={`cursor-pointer transition-all ${
+                          state.meshType === meshType
+                            ? "ring-2 ring-primary border-primary"
+                            : "hover:border-primary/50"
+                        }`}
+                        onClick={() => selectMeshType(meshType)}
+                      >
+                        <CardContent className="p-4">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h4 className="font-medium">{meshInfo.name}</h4>
+                              <p className="text-sm text-muted-foreground">
+                                {meshInfo.description}
+                              </p>
+                            </div>
+                            {state.meshType === meshType && (
+                              <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+                                <Check className="w-4 h-4 text-primary-foreground" />
+                              </div>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 고구려시스템 자동 선택 안내 */}
+            {state.installType && getAvailableMeshTypes().length === 1 && (
+              <div className="p-4 bg-secondary/50 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <Info className="w-4 h-4 text-muted-foreground mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium">
+                      망 타입 자동 선택
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {state.brand === 'goguryeo' && state.installType === 'lowFloor' && '0.6mm (16mesh)'}
+                      {state.brand === 'goguryeo' && state.installType === 'highFloor' && '0.4mm (16mesh)'}
+                      이(가) 자동으로 선택되었습니다.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3 pt-4">
+              <Button variant="outline" onClick={prevStep} className="flex-1">
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                이전
+              </Button>
+              <Button
+                onClick={nextStep}
+                disabled={!canProceed()}
+                className="flex-1"
+              >
+                다음
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 4: 공간/사이즈 선택 */}
+        {state.step === 4 && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-bold mb-2">공간/사이즈 선택</h2>
+              <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
+                <Badge variant="secondary">
+                  {brands.find((b) => b.id === state.brand)?.name}
+                </Badge>
+                <Badge variant="secondary">
+                  {installTypes.find((i) => i.id === state.installType)?.name}
+                </Badge>
+                <Badge variant="secondary">{state.meshType}</Badge>
+              </div>
+              <p className="text-muted-foreground mt-2">
+                공간별 개수를 선택하고, 실측값이 있으면 입력해주세요.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              {spaces.map((space) => {
+                const count = getSpaceCount(space.id);
+                const details = getSpaceDetails(space.id);
+
+                return (
+                  <Card key={space.id}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <h3 className="font-bold">{space.name}</h3>
+                          <p className="text-sm text-muted-foreground">
+                            기본사이즈: {space.defaultWidth}×{space.defaultHeight}mm
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() =>
+                              updateSpaceItem(space.id, Math.max(0, count - 1))
+                            }
+                          >
+                            <Minus className="w-4 h-4" />
+                          </Button>
+                          <span className="w-8 text-center font-bold">
+                            {count}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => updateSpaceItem(space.id, count + 1)}
+                          >
+                            <Plus className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      {count > 0 && (
+                        <div className="space-y-4 pt-3 border-t">
+                          {/* 실측사이즈 버튼 */}
+                          <Button
+                            variant={getShowSizeInput(space.id) ? "default" : "outline"}
+                            size="sm"
+                            className="w-full"
+                            onClick={() => toggleSizeInput(space.id)}
+                          >
+                            {getShowSizeInput(space.id) ? (
+                              <>
+                                <Check className="w-4 h-4 mr-2" />
+                                실측사이즈 입력 중
+                              </>
+                            ) : (
+                              <>
+                                <Plus className="w-4 h-4 mr-2" />
+                                실측사이즈 입력
+                              </>
+                            )}
+                          </Button>
+
+                          {details.map((detail, index) => {
+                            const price =
+                              state.brand && state.meshType
+                                ? getPrice(state.brand, state.meshType, detail.width, detail.height)
+                                : null;
+
+                            return (
+                              <div key={detail.id} className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-sm font-medium text-muted-foreground">
+                                    {space.name} {index + 1}
+                                  </span>
+                                  {price && (
+                                    <span className="text-sm font-bold text-primary">
+                                      {price.toLocaleString()}원
+                                    </span>
+                                  )}
+                                </div>
+                                {/* 실측사이즈 입력 영역 - 버튼 클릭 시 표시 */}
+                                {getShowSizeInput(space.id) && (
+                                  <>
+                                    <div className="flex gap-3">
+                                      <div className="flex-1">
+                                        <label className="text-xs text-muted-foreground">
+                                          가로 (mm)
+                                        </label>
+                                        <Input
+                                          type="number"
+                                          value={detail.width}
+                                          onChange={(e) => {
+                                            const value = e.target.value === '' ? 0 : parseInt(e.target.value);
+                                            updateSpaceDetailSize(
+                                              space.id,
+                                              index,
+                                              value,
+                                              null
+                                            );
+                                          }}
+                                          onFocus={(e) => e.target.select()}
+                                          onBlur={(e) => {
+                                            // 빈 값이거나 0이면 기본값으로 복원
+                                            if (e.target.value === '' || parseInt(e.target.value) === 0) {
+                                              updateSpaceDetailSize(
+                                                space.id,
+                                                index,
+                                                space.defaultWidth,
+                                                null
+                                              );
+                                            }
+                                          }}
+                                          className="mt-1"
+                                        />
+                                      </div>
+                                      <div className="flex-1">
+                                        <label className="text-xs text-muted-foreground">
+                                          세로 (mm)
+                                        </label>
+                                        <Input
+                                          type="number"
+                                          value={detail.height}
+                                          onChange={(e) => {
+                                            const value = e.target.value === '' ? 0 : parseInt(e.target.value);
+                                            updateSpaceDetailSize(
+                                              space.id,
+                                              index,
+                                              null,
+                                              value
+                                            );
+                                          }}
+                                          onFocus={(e) => e.target.select()}
+                                          onBlur={(e) => {
+                                            // 빈 값이거나 0이면 기본값으로 복원
+                                            if (e.target.value === '' || parseInt(e.target.value) === 0) {
+                                              updateSpaceDetailSize(
+                                                space.id,
+                                                index,
+                                                null,
+                                                space.defaultHeight
+                                              );
+                                            }
+                                          }}
+                                          className="mt-1"
+                                        />
+                                      </div>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                      적용 사이즈: {roundUpTo100(detail.width)}×{roundUpTo100(detail.height)}mm (100mm 단위 올림)
+                                    </p>
+                                  </>
+                                )}
+                                {/* 실측사이즈 미입력 시 기본 사이즈 표시 */}
+                                {!getShowSizeInput(space.id) && (
+                                  <p className="text-xs text-muted-foreground">
+                                    기본 사이즈: {detail.width}×{detail.height}mm
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+
+            <div className="flex gap-3 pt-4">
+              <Button variant="outline" onClick={prevStep} className="flex-1">
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                이전
+              </Button>
+              <Button
+                onClick={nextStep}
+                disabled={!canProceed()}
+                className="flex-1"
+              >
+                다음
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 5: 옵션 선택 */}
+        {state.step === 5 && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-bold mb-2">옵션 선택</h2>
+            </div>
+
+            <Card>
+              <CardContent className="p-5">
+                <div className="flex items-start justify-between mb-4">
+                  <div>
+                    <h3 className="font-bold">번호키 추가</h3>
+                    <p className="text-sm text-primary font-medium">
+                      +{NUMBER_KEY_PRICE.toLocaleString()}원/개
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() =>
+                        updateNumberKeyCount(state.numberKeyCount - 1)
+                      }
+                    >
+                      <Minus className="w-4 h-4" />
+                    </Button>
+                    <span className="w-8 text-center font-bold">
+                      {state.numberKeyCount}
+                    </span>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() =>
+                        updateNumberKeyCount(state.numberKeyCount + 1)
+                      }
+                    >
+                      <Plus className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 p-3 bg-secondary/50 rounded-lg">
+                  <Info className="w-4 h-4 text-muted-foreground mt-0.5" />
+                  <p className="text-sm text-muted-foreground">
+                    크리세트(자동잠금장치) 기본포함, 번호키는 옵션 추가
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="flex gap-3 pt-4">
+              <Button variant="outline" onClick={prevStep} className="flex-1">
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                이전
+              </Button>
+              <Button onClick={nextStep} className="flex-1">
+                견적 확인
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 6: 견적 결과 */}
+        {state.step === 6 && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-bold mb-2">견적 결과</h2>
+              <p className="text-muted-foreground">
+                안전방범·추락방지 방충망 견적
+              </p>
+            </div>
+
+            {(() => {
+              const { items, productTotal, numberKeyTotal, total } =
+                calculateTotal();
+              const brandInfo = brands.find((b) => b.id === state.brand);
+              const installInfo = installTypes.find(
+                (i) => i.id === state.installType
+              );
+              const amountCashback = calculateAmountCashback(total);
+              const finalPrice = total - CARD_BENEFITS.firstDiscount - amountCashback;
+              // 월 요금 = 총 시공견적 / 24개월
+              const monthlyPayment = Math.round(
+                total / CARD_BENEFITS.installmentMonths
+              );
+              const monthlyWithCashback =
+                monthlyPayment - CARD_BENEFITS.monthlyCashback;
+              const totalWithCashback =
+                finalPrice -
+                CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths;
+
+              return (
+                <>
+                  <Card>
+                    <CardContent className="p-5 space-y-4">
+                      <div className="text-center pb-4 border-b">
+                        <p className="text-sm text-muted-foreground mb-1">
+                          예상 견적 결과
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          정확한 최종 견적은 방문 실측 후 확정됩니다. (예상 견적은 참고용)
+                        </p>
+                      </div>
+
+                      <div className="space-y-3">
+                        <h4 className="font-bold text-sm">산출 요약</h4>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">
+                              적용 브랜드
+                            </span>
+                            <span className="font-medium">
+                              {brandInfo?.name}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">
+                              설치유형
+                            </span>
+                            <span className="font-medium">
+                              {state.installType === 'lowFloor' ? '저층 / 방범 방충' : '고층 / 추락방지'} {state.meshType}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 pt-3 border-t">
+                        {items.map((item, index) => (
+                          <div
+                            key={index}
+                            className="flex justify-between text-sm"
+                          >
+                            <span className="text-muted-foreground">
+                              {item.spaceName} {item.detailIndex} ({item.width}×{item.height}mm)
+                            </span>
+                            <span>
+                              {item.unitPrice.toLocaleString()}원
+                            </span>
+                          </div>
+                        ))}
+                        {state.numberKeyCount > 0 && (
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">
+                              번호키
+                            </span>
+                            <span>
+                              {NUMBER_KEY_PRICE.toLocaleString()}원×
+                              {state.numberKeyCount}개
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex justify-between pt-3 border-t">
+                        <span className="font-bold">총 시공 견적</span>
+                        <span className="font-bold text-lg">
+                          {total.toLocaleString()}원
+                        </span>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="bg-primary/5 border-primary/20">
+                    <CardContent className="p-5 space-y-4">
+                      <h4 className="font-bold">제휴카드혜택 내역</h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
+                            첫 결제 할인
+                          </span>
+                          <span className="text-destructive font-medium">
+                            -{CARD_BENEFITS.firstDiscount.toLocaleString()}원
+                          </span>
+                        </div>
+                        {amountCashback > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">
+                              금액대별 캐시백 ({Math.floor(total / 1000000)}00만원 구간)
+                            </span>
+                            <span className="text-destructive font-medium">
+                              -{amountCashback.toLocaleString()}원
+                            </span>
+                          </div>
+                        )}
+                        <div className="flex justify-between items-center pt-3 border-t">
+                          <span className="text-lg font-bold">제휴카드 혜택가</span>
+                          <span className="text-2xl font-bold text-primary">
+                            {finalPrice.toLocaleString()}원
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="p-4 bg-background rounded-lg space-y-3">
+                        <div className="text-center">
+                          <p className="text-xs text-muted-foreground">
+                            {CARD_BENEFITS.installmentMonths}개월 무이자 할부 + 매월 30만원 사용시{" "}
+                            {CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백
+                          </p>
+                          <p className="text-[10px] text-muted-foreground/70">
+                            (사용 5대가전 수리비 연장보험 5만원 가입시 혜택)
+                          </p>
+                        </div>
+                        <div className="flex items-center justify-center gap-2 text-lg">
+                          <span>월</span>
+                          <span className="font-bold">
+                            {monthlyPayment.toLocaleString()}원
+                          </span>
+                          <span>-</span>
+                          <span className="text-destructive">
+                            {CARD_BENEFITS.monthlyCashback.toLocaleString()}원
+                          </span>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-sm text-muted-foreground">
+                            최종 월 부담금
+                          </p>
+                          <p className="text-2xl font-bold text-primary">
+                            {monthlyWithCashback.toLocaleString()}원
+                          </p>
+                        </div>
+                        <div className="pt-3 border-t">
+                          <div className="flex items-center justify-center gap-4">
+                            <div className="text-left">
+                              <p className="text-xs text-muted-foreground">
+                                이용조건 충족
+                              </p>
+                              <p className="text-lg font-bold text-foreground">
+                                최종혜택가
+                              </p>
+                            </div>
+                            <p className="text-3xl font-bold text-primary">
+                              {totalWithCashback.toLocaleString()}원
+                            </p>
+                          </div>
+                          <p className="text-xs text-muted-foreground text-center mt-1">
+                            (제휴카드혜택가 -{" "}
+                            {CARD_BENEFITS.monthlyCashback.toLocaleString()}원 ×{" "}
+                            {CARD_BENEFITS.installmentMonths}개월)
+                          </p>
+                        </div>
+                      </div>
+
+
+                    </CardContent>
+                  </Card>
+
+                  <div className="flex gap-3">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={copyQuote}
+                    >
+                      {copied ? (
+                        <Check className="w-4 h-4 mr-2" />
+                      ) : (
+                        <Copy className="w-4 h-4 mr-2" />
+                      )}
+                      {copied ? "복사됨" : "견적 복사"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={shareKakao}
+                    >
+                      <Share2 className="w-4 h-4 mr-2" />
+                      카톡 공유
+                    </Button>
+                  </div>
+
+                  <Card className="bg-secondary/50">
+                    <CardContent className="p-4">
+                      <h4 className="font-bold text-sm mb-2">안내 사항</h4>
+                      <ul className="text-xs text-muted-foreground space-y-1">
+                        <li>• 최종 금액은 방문 실측 후 확정될 수 있습니다.</li>
+                        <li>
+                          • 특수 창호/사이즈는 별도 실측후 견적 가능(기본가격은 슬라이딩 도어)
+                        </li>
+                        <li>
+                          • 설치수량 2개 이하 / 지역에 따라서 추가 출장비 발생할수도 있습니다.
+                        </li>
+                        <li>
+                          • 모든 계산은 100mm(10cm) 단위 올림이 적용됩니다.
+                        </li>
+                        <li>
+                          • 캐시백 및 할인 혜택은 카드사 정책에 따라 변경될 수
+                          있습니다.
+                        </li>
+                      </ul>
+                    </CardContent>
+                  </Card>
+
+                  <div className="flex gap-3">
+                    <Button
+                      variant="outline"
+                      onClick={() => goToStep(1)}
+                      className="flex-1"
+                    >
+                      처음으로
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={prevStep}
+                      className="flex-1"
+                    >
+                      <ChevronLeft className="w-4 h-4 mr-1" />
+                      수정하기
+                    </Button>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
+      </main>
+
+      {/* 푸터 - 결제페이지(step 6 또는 유리난간 step 3)에서만 표시 */}
+      {(state.step === 6 || (state.step === 3 && state.quoteType === 'glassRailing')) && (
+        <footer className="border-t mt-12 py-6">
+          <div className="max-w-lg mx-auto px-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <img
+                  src="/elephant-logo2.png"
+                  alt="코끼리시스템 로고"
+                  className="h-14 w-auto"
+                />
+                <span className="font-medium text-base">코끼리시스템</span>
+              </div>
+              <a
+                href="tel:1555-0143"
+                className="inline-flex items-center gap-1.5 bg-primary text-primary-foreground px-3 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                </svg>
+                1555-0143
+              </a>
+            </div>
+          </div>
+        </footer>
+      )}
+    </div>
+  );
+}

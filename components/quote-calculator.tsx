@@ -24,7 +24,6 @@ import {
   installTypes,
   spaces,
   NUMBER_KEY_PRICE,
-  CARD_BENEFITS,
   getPrice,
   roundUpTo100,
   getGlassRailingPrice,
@@ -85,20 +84,17 @@ const PRODUCT_NOTICES: Record<QuoteType, string[]> = {
     '특수 창호/사이즈는 별도 실측후 견적 가능(기본가격은 슬라이딩 도어)',
     '설치수량 2개 이하 / 지역에 따라서 추가 출장비 발생할수도 있습니다.',
     '모든 계산은 100mm(10cm) 단위 올림이 적용됩니다.',
-    '캐시백 및 할인 혜택은 카드사 정책에 따라 변경될 수 있습니다.',
   ],
   glassRailing: [
     '최종 금액은 방문 실측 후 확정될 수 있습니다.',
     '공동구매는 같은 아파트 단지 내 3세대 이상 함께 시공시 적용됩니다.',
     '입면분할창은 현장에 따라 금액 변동이 있을 수 있으며, 방추가 할인은 적용되지 않습니다.',
-    '캐시백 및 할인 혜택은 카드사 정책에 따라 변경될 수 있습니다.',
   ],
   huperOptik: [
     '최종 금액은 방문 실측 후 확정될 수 있습니다.',
     '공동구매는 같은 아파트 단지 내 3세대 이상 함께 시공시 적용됩니다.',
     '단, 주상복합이나 이면창이 있는경우 추가요금이 발생할 수 있습니다.',
     '전용 84초과 타입은 실측을 통한 견적이 가능합니다.',
-    '캐시백 및 할인 혜택은 카드사 정책에 따라 변경될 수 있습니다.',
   ],
 };
 
@@ -156,33 +152,26 @@ const availableMeshTypes: Record<BrandType, Record<InstallType, MeshType[]>> = {
   },
 };
 
-// 금액대별 캐시백 계산 (구간별 5%)
-function calculateAmountCashback(total: number): number {
-  if (total >= 10000000) return 500000; // 1000만 → 50만
-  if (total >= 7000000)  return 350000; // 700만 → 35만
-  if (total >= 5000000)  return 250000; // 500만 → 25만
-  if (total >= 3000000)  return 150000; // 300만 → 15만
-  if (total >= 2000000)  return 100000; // 200만 → 10만
-  if (total >= 1000000)  return  50000; // 100만 → 5만
-  return 0;
-}
-
-// 금액대별 캐시백 구간 라벨 반환
-function getCashbackTierLabel(total: number): string {
-  if (total >= 10000000) return "1000만원";
-  if (total >= 7000000)  return "700만원";
-  if (total >= 5000000)  return "500만원";
-  if (total >= 3000000)  return "300만원";
-  if (total >= 2000000)  return "200만원";
-  if (total >= 1000000)  return "100만원";
-  return "해당없음";
-}
 
 export default function QuoteCalculator() {
   const [state, setState] = useState<QuoteState>(initialState);
   const [copied, setCopied] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  const [discountPercent, setDiscountPercent] = useState<number>(0);
+  const [showDiscountInput, setShowDiscountInput] = useState(false);
+  const [discountInputValue, setDiscountInputValue] = useState<string>('');
   const resultAreaRef = useRef<HTMLDivElement>(null);
+
+  // 에누리: percent% 할인 후 만원 단위 반올림
+  const applyDiscount = (total: number, percent: number): number => {
+    return Math.round(total * (1 - percent / 100) / 10000) * 10000;
+  };
+
+  const resetDiscount = () => {
+    setDiscountPercent(0);
+    setShowDiscountInput(false);
+    setDiscountInputValue('');
+  };
 
   const updateState = useCallback((updates: Partial<QuoteState>) => {
     setState((prev) => ({ ...prev, ...updates }));
@@ -378,11 +367,6 @@ export default function QuoteCalculator() {
     const installInfo = installTypes.find((i) => i.id === state.installType);
     const completedTotal = state.completedQuotes.reduce((s, q) => s + q.total, 0);
     const grandTotal = completedTotal + total;
-    const effectiveTotal = state.completedQuotes.length > 0 ? grandTotal : total;
-    const amountCashback = calculateAmountCashback(effectiveTotal);
-    const finalPrice = effectiveTotal - CARD_BENEFITS.firstDiscount - amountCashback;
-    const totalCashbackBenefit = CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths;
-    const totalWithCashback = finalPrice - totalCashbackBenefit;
 
     let text = state.completedQuotes.length > 0 ? `[합산 견적서]\n\n` : `[안전방충망 견적서]\n\n`;
     text += `[안전방충망]\n`;
@@ -407,28 +391,23 @@ export default function QuoteCalculator() {
     } else {
       text += `\n*총 시공 견적: ${total.toLocaleString()}원\n`;
     }
-    text += `\n[제휴카드혜택 내역]\n`;
-    text += `첫 결제 할인: -${CARD_BENEFITS.firstDiscount.toLocaleString()}원\n`;
-    if (amountCashback > 0) {
-      text += `금액대별 캐시백 (${getCashbackTierLabel(effectiveTotal)} 구간): -${amountCashback.toLocaleString()}원\n`;
+    const baseTotal = state.completedQuotes.length > 0 ? grandTotal : total;
+    if (discountPercent > 0) {
+      const discountedTotal = applyDiscount(baseTotal, discountPercent);
+      text += `\n[에누리 ${discountPercent}% 적용]\n`;
+      text += `에누리 적용가: ${discountedTotal.toLocaleString()}원\n`;
     }
-    text += `*제휴카드 혜택가: ${finalPrice.toLocaleString()}원\n`;
-    text += `\n[이용조건 충족시]\n`;
-    text += `매월 30만원 사용시 ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백\n`;
-    text += `(${CARD_BENEFITS.installmentMonths}개월) 총 : ${(CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths).toLocaleString()}원\n`;
-    text += `*이용조건 충족 최종혜택가: ${totalWithCashback.toLocaleString()}원\n`;
     text += `\n[안내사항]\n`;
     text += `• 최종 금액은 방문 실측 후 확정될 수 있습니다.\n`;
     text += `• 특수 창호/사이즈는 별도 실측후 견적 가능(기본가격은 슬라이딩 도어)\n`;
     text += `• 설치수량 2개 이하 / 지역에 따라서 추가 출장비 발생할수도 있습니다.\n`;
     text += `• 모든 계산은 100mm(10cm) 단위 올림이 적용됩니다.\n`;
-    text += `• 캐시백 및 할인 혜택은 카드사 정책에 따라 변경될 수 있습니다.\n`;
     text += `\n문의: 코끼리시스템 1555-0143`;
 
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }, [calculateTotal, state.brand, state.installType, state.meshType, state.numberKeyCount, state.completedQuotes]);
+  }, [calculateTotal, state.brand, state.installType, state.meshType, state.numberKeyCount, state.completedQuotes, discountPercent, applyDiscount]);
 
   // 견적 캡처
   const captureQuote = useCallback(async () => {
@@ -1111,12 +1090,6 @@ export default function QuoteCalculator() {
                 : 0;
               const completedTotal = state.completedQuotes.reduce((s, q) => s + q.total, 0);
               const grandTotal = completedTotal + total;
-              const effectiveTotal = state.completedQuotes.length > 0 ? grandTotal : total;
-              const amountCashback = calculateAmountCashback(effectiveTotal);
-              const finalPrice = effectiveTotal - CARD_BENEFITS.firstDiscount - amountCashback;
-              const monthlyPayment = Math.round(effectiveTotal / CARD_BENEFITS.installmentMonths);
-              const monthlyWithCashback = monthlyPayment - CARD_BENEFITS.monthlyCashback;
-              const totalWithCashback = finalPrice - (CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths);
 
               const purchaseTypeInfo = glassRailingPurchaseOptions.find(o => o.id === state.glassRailingPurchaseType);
               const railingTypeInfo = glassRailingTypeOptions.find(o => o.id === state.glassRailingType);
@@ -1209,49 +1182,69 @@ export default function QuoteCalculator() {
                     </CardContent>
                   </Card>
 
-                  <Card className="bg-primary/5 border-primary/20">
-                    <CardContent className="p-5 space-y-4">
-                      <h4 className="font-bold">제휴카드혜택 내역</h4>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">첫 결제 할인</span>
-                          <span className="text-destructive font-medium">
-                            -{CARD_BENEFITS.firstDiscount.toLocaleString()}원
-                          </span>
-                        </div>
-                        {amountCashback > 0 && (
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">
-                              금액대별 캐시백 ({getCashbackTierLabel(effectiveTotal)} 구간)
-                            </span>
-                            <span className="text-destructive font-medium">
-                              -{amountCashback.toLocaleString()}원
-                            </span>
+                  {/* 에누리 */}
+                  {(() => {
+                    const baseTotal = state.completedQuotes.length > 0 ? grandTotal : total;
+                    const discountedTotal = discountPercent > 0 ? applyDiscount(baseTotal, discountPercent) : null;
+                    return (
+                      <Card className="border-orange-200">
+                        <CardContent className="p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-orange-600">에누리</span>
+                            <Button
+                              size="sm"
+                              variant={showDiscountInput ? "default" : "outline"}
+                              className="h-8 px-3 text-sm border-orange-300 text-orange-600 hover:bg-orange-50"
+                              onClick={() => {
+                                if (showDiscountInput) {
+                                  resetDiscount();
+                                } else {
+                                  setShowDiscountInput(true);
+                                }
+                              }}
+                            >
+                              {showDiscountInput ? '취소' : '에누리 적용'}
+                            </Button>
                           </div>
-                        )}
-                        <div className="flex justify-between items-center pt-3 border-t">
-                          <span className="text-lg font-bold">제휴카드 혜택가</span>
-                          <span className="text-2xl font-bold text-primary">
-                            {finalPrice.toLocaleString()}원
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="p-4 bg-background rounded-lg space-y-2">
-                        <p className="text-xs text-muted-foreground text-center">[이용조건 충족시]</p>
-                        <p className="text-sm text-center">
-                          매월 30만원 사용시 {CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백
-                        </p>
-                        <p className="text-sm text-center text-muted-foreground">
-                          ({CARD_BENEFITS.installmentMonths}개월) 총 : {(CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths).toLocaleString()}원
-                        </p>
-                        <div className="pt-2 border-t text-center">
-                          <p className="text-sm text-muted-foreground">*이용조건 충족 최종혜택가</p>
-                          <p className="text-3xl font-bold text-primary">{totalWithCashback.toLocaleString()}원</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                          {showDiscountInput && (
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number"
+                                min={0}
+                                max={100}
+                                placeholder="할인율 입력"
+                                value={discountInputValue}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setDiscountInputValue(v);
+                                  const n = parseFloat(v);
+                                  setDiscountPercent(!isNaN(n) && n > 0 ? n : 0);
+                                }}
+                                className="h-9 w-32 text-center"
+                              />
+                              <span className="text-sm font-medium">%</span>
+                            </div>
+                          )}
+                          {discountedTotal !== null && discountPercent > 0 && (
+                            <div className="space-y-1 pt-1 border-t text-sm">
+                              <div className="flex justify-between text-muted-foreground">
+                                <span>원래 견적</span>
+                                <span>{baseTotal.toLocaleString()}원</span>
+                              </div>
+                              <div className="flex justify-between text-red-500">
+                                <span>에누리 ({discountPercent}%)</span>
+                                <span>-{(baseTotal - discountedTotal).toLocaleString()}원</span>
+                              </div>
+                              <div className="flex justify-between font-bold text-lg pt-1 border-t text-orange-600">
+                                <span>에누리 적용가</span>
+                                <span>{discountedTotal.toLocaleString()}원</span>
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })()}
 
                   {/* 다른 상품 추가 버튼 */}
                   <Button
@@ -1308,23 +1301,18 @@ export default function QuoteCalculator() {
                         } else {
                           text += `\n*총 시공 견적: ${total.toLocaleString()}원\n`;
                         }
-                        text += `\n[제휴카드혜택 내역]\n`;
-                        text += `첫 결제 할인: -${CARD_BENEFITS.firstDiscount.toLocaleString()}원\n`;
-                        if (amountCashback > 0) {
-                          text += `금액대별 캐시백 (${getCashbackTierLabel(effectiveTotal)} 구간): -${amountCashback.toLocaleString()}원\n`;
+                        const baseTotal = state.completedQuotes.length > 0 ? grandTotal : total;
+                        if (discountPercent > 0) {
+                          const discountedTotal = applyDiscount(baseTotal, discountPercent);
+                          text += `\n[에누리 ${discountPercent}% 적용]\n`;
+                          text += `에누리 적용가: ${discountedTotal.toLocaleString()}원\n`;
                         }
-                        text += `*제휴카드 혜택가: ${finalPrice.toLocaleString()}원\n`;
-                        text += `\n[이용조건 충족시]\n`;
-                        text += `매월 30만원 사용시 ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백\n`;
-                        text += `(${CARD_BENEFITS.installmentMonths}개월) 총 : ${(CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths).toLocaleString()}원\n`;
-                        text += `*이용조건 충족 최종혜택가: ${totalWithCashback.toLocaleString()}원\n`;
                         text += `\n[안내사항]\n`;
                         text += `• 최종 금액은 방문 실측 후 확정될 수 있습니다.\n`;
                         text += `• 공동구매는 같은 아파트 단지 내 3세대 이상 함께 시공시 적용됩니다.\n`;
                         text += `• 입면분할창은 현장에 따라 금액 변동이 있을 수 있으며, 방추가 할인은 적용되지 않습니다.\n`;
-                        text += `• 캐시백 및 할인 혜택은 카드사 정책에 따라 변경될 수 있습니다.\n`;
                         text += `\n문의: 코끼리시스템 1555-0143`;
-                        
+
                         navigator.clipboard.writeText(text);
                         setCopied(true);
                         setTimeout(() => setCopied(false), 2000);
@@ -1430,12 +1418,6 @@ export default function QuoteCalculator() {
                 : 0;
               const completedTotal = state.completedQuotes.reduce((s, q) => s + q.total, 0);
               const grandTotal = completedTotal + total;
-              const effectiveTotal = state.completedQuotes.length > 0 ? grandTotal : total;
-              const amountCashback = calculateAmountCashback(effectiveTotal);
-              const finalPrice = effectiveTotal - CARD_BENEFITS.firstDiscount - amountCashback;
-              const monthlyPayment = Math.round(effectiveTotal / CARD_BENEFITS.installmentMonths);
-              const monthlyWithCashback = monthlyPayment - CARD_BENEFITS.monthlyCashback;
-              const totalWithCashback = finalPrice - (CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths);
 
               const purchaseTypeInfo = huperOptikPurchaseOptions.find(o => o.id === state.huperOptikPurchaseType);
               const filmTypeInfo = huperOptikFilmOptions.find(o => o.id === state.huperOptikFilmType);
@@ -1536,49 +1518,69 @@ export default function QuoteCalculator() {
                     </CardContent>
                   </Card>
 
-                  <Card className="bg-primary/5 border-primary/20">
-                    <CardContent className="p-5 space-y-4">
-                      <h4 className="font-bold">제휴카드혜택 내역</h4>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">첫 결제 할인</span>
-                          <span className="text-destructive font-medium">
-                            -{CARD_BENEFITS.firstDiscount.toLocaleString()}원
-                          </span>
-                        </div>
-                        {amountCashback > 0 && (
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">
-                              금액대별 캐시백 ({getCashbackTierLabel(effectiveTotal)} 구간)
-                            </span>
-                            <span className="text-destructive font-medium">
-                              -{amountCashback.toLocaleString()}원
-                            </span>
+                  {/* 에누리 */}
+                  {(() => {
+                    const baseTotal = state.completedQuotes.length > 0 ? grandTotal : total;
+                    const discountedTotal = discountPercent > 0 ? applyDiscount(baseTotal, discountPercent) : null;
+                    return (
+                      <Card className="border-orange-200">
+                        <CardContent className="p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-orange-600">에누리</span>
+                            <Button
+                              size="sm"
+                              variant={showDiscountInput ? "default" : "outline"}
+                              className="h-8 px-3 text-sm border-orange-300 text-orange-600 hover:bg-orange-50"
+                              onClick={() => {
+                                if (showDiscountInput) {
+                                  resetDiscount();
+                                } else {
+                                  setShowDiscountInput(true);
+                                }
+                              }}
+                            >
+                              {showDiscountInput ? '취소' : '에누리 적용'}
+                            </Button>
                           </div>
-                        )}
-                        <div className="flex justify-between items-center pt-3 border-t">
-                          <span className="text-lg font-bold">제휴카드 혜택가</span>
-                          <span className="text-2xl font-bold text-primary">
-                            {finalPrice.toLocaleString()}원
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="p-4 bg-background rounded-lg space-y-2">
-                        <p className="text-xs text-muted-foreground text-center">[이용조건 충족시]</p>
-                        <p className="text-sm text-center">
-                          매월 30만원 사용시 {CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백
-                        </p>
-                        <p className="text-sm text-center text-muted-foreground">
-                          ({CARD_BENEFITS.installmentMonths}개월) 총 : {(CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths).toLocaleString()}원
-                        </p>
-                        <div className="pt-2 border-t text-center">
-                          <p className="text-sm text-muted-foreground">*이용조건 충족 최종혜택가</p>
-                          <p className="text-3xl font-bold text-primary">{totalWithCashback.toLocaleString()}원</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                          {showDiscountInput && (
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number"
+                                min={0}
+                                max={100}
+                                placeholder="할인율 입력"
+                                value={discountInputValue}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setDiscountInputValue(v);
+                                  const n = parseFloat(v);
+                                  setDiscountPercent(!isNaN(n) && n > 0 ? n : 0);
+                                }}
+                                className="h-9 w-32 text-center"
+                              />
+                              <span className="text-sm font-medium">%</span>
+                            </div>
+                          )}
+                          {discountedTotal !== null && discountPercent > 0 && (
+                            <div className="space-y-1 pt-1 border-t text-sm">
+                              <div className="flex justify-between text-muted-foreground">
+                                <span>원래 견적</span>
+                                <span>{baseTotal.toLocaleString()}원</span>
+                              </div>
+                              <div className="flex justify-between text-red-500">
+                                <span>에누리 ({discountPercent}%)</span>
+                                <span>-{(baseTotal - discountedTotal).toLocaleString()}원</span>
+                              </div>
+                              <div className="flex justify-between font-bold text-lg pt-1 border-t text-orange-600">
+                                <span>에누리 적용가</span>
+                                <span>{discountedTotal.toLocaleString()}원</span>
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })()}
 
                   {/* 다른 상품 추가 버튼 */}
                   <Button
@@ -1659,22 +1661,17 @@ export default function QuoteCalculator() {
                         } else {
                           text += `\n*총 시공 견적: ${total.toLocaleString()}원\n`;
                         }
-                        text += `\n[제휴카드혜택 내역]\n`;
-                        text += `첫 결제 할인: -${CARD_BENEFITS.firstDiscount.toLocaleString()}원\n`;
-                        if (amountCashback > 0) {
-                          text += `금액대별 캐시백 (${getCashbackTierLabel(effectiveTotal)} 구간): -${amountCashback.toLocaleString()}원\n`;
+                        const baseTotal = state.completedQuotes.length > 0 ? grandTotal : total;
+                        if (discountPercent > 0) {
+                          const discountedTotal = applyDiscount(baseTotal, discountPercent);
+                          text += `\n[에누리 ${discountPercent}% 적용]\n`;
+                          text += `에누리 적용가: ${discountedTotal.toLocaleString()}원\n`;
                         }
-                        text += `*제휴카드 혜택가: ${finalPrice.toLocaleString()}원\n`;
-                        text += `\n[이용조건 충족시]\n`;
-                        text += `매월 30만원 사용시 ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백\n`;
-                        text += `(${CARD_BENEFITS.installmentMonths}개월) 총 : ${(CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths).toLocaleString()}원\n`;
-                        text += `*이용조건 충족 최종혜택가: ${totalWithCashback.toLocaleString()}원\n`;
                         text += `\n[안내사항]\n`;
                         text += `• 최종 금액은 방문 실측 후 확정될 수 있습니다.\n`;
                         text += `• 공동구매는 같은 아파트 단지 내 3세대 이상 함께 시공시 적용됩니다.\n`;
                         text += `• 단, 주상복합이나 이면창이 있는경우 추가요금이 발생할 수 있습니다.\n`;
                         text += `• 전용 84초과 타입은 실측을 통한 견적이 가능합니다.\n`;
-                        text += `• 캐시백 및 할인 혜택은 카드사 정책에 따라 변경될 수 있습니다.\n`;
                         text += `\n문의: 코끼리시스템 1555-0143`;
                         
                         navigator.clipboard.writeText(text);
@@ -2188,17 +2185,6 @@ export default function QuoteCalculator() {
               );
               const completedTotal = state.completedQuotes.reduce((s, q) => s + q.total, 0);
               const grandTotal = completedTotal + total;
-              const effectiveTotal = state.completedQuotes.length > 0 ? grandTotal : total;
-              const amountCashback = calculateAmountCashback(effectiveTotal);
-              const finalPrice = effectiveTotal - CARD_BENEFITS.firstDiscount - amountCashback;
-              const monthlyPayment = Math.round(
-                effectiveTotal / CARD_BENEFITS.installmentMonths
-              );
-              const monthlyWithCashback =
-                monthlyPayment - CARD_BENEFITS.monthlyCashback;
-              const totalWithCashback =
-                finalPrice -
-                CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths;
 
               return (
                 <>
@@ -2290,51 +2276,69 @@ export default function QuoteCalculator() {
                     </CardContent>
                   </Card>
 
-                  <Card className="bg-primary/5 border-primary/20">
-                    <CardContent className="p-5 space-y-4">
-                      <h4 className="font-bold">제휴카드혜택 내역</h4>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">
-                            첫 결제 할인
-                          </span>
-                          <span className="text-destructive font-medium">
-                            -{CARD_BENEFITS.firstDiscount.toLocaleString()}원
-                          </span>
-                        </div>
-                        {amountCashback > 0 && (
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">
-                              금액대별 캐시백 ({getCashbackTierLabel(effectiveTotal)} 구간)
-                            </span>
-                            <span className="text-destructive font-medium">
-                              -{amountCashback.toLocaleString()}원
-                            </span>
+                  {/* 에누리 */}
+                  {(() => {
+                    const baseTotal = state.completedQuotes.length > 0 ? grandTotal : total;
+                    const discountedTotal = discountPercent > 0 ? applyDiscount(baseTotal, discountPercent) : null;
+                    return (
+                      <Card className="border-orange-200">
+                        <CardContent className="p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-orange-600">에누리</span>
+                            <Button
+                              size="sm"
+                              variant={showDiscountInput ? "default" : "outline"}
+                              className="h-8 px-3 text-sm border-orange-300 text-orange-600 hover:bg-orange-50"
+                              onClick={() => {
+                                if (showDiscountInput) {
+                                  resetDiscount();
+                                } else {
+                                  setShowDiscountInput(true);
+                                }
+                              }}
+                            >
+                              {showDiscountInput ? '취소' : '에누리 적용'}
+                            </Button>
                           </div>
-                        )}
-                        <div className="flex justify-between items-center pt-3 border-t">
-                          <span className="text-lg font-bold">제휴카드 혜택가</span>
-                          <span className="text-2xl font-bold text-primary">
-                            {finalPrice.toLocaleString()}원
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="p-4 bg-background rounded-lg space-y-2">
-                        <p className="text-xs text-muted-foreground text-center">[이용조건 충족시]</p>
-                        <p className="text-sm text-center">
-                          매월 30만원 사용시 {CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백
-                        </p>
-                        <p className="text-sm text-center text-muted-foreground">
-                          ({CARD_BENEFITS.installmentMonths}개월) 총 : {(CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths).toLocaleString()}원
-                        </p>
-                        <div className="pt-2 border-t text-center">
-                          <p className="text-sm text-muted-foreground">*이용조건 충족 최종혜택가</p>
-                          <p className="text-3xl font-bold text-primary">{totalWithCashback.toLocaleString()}원</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
+                          {showDiscountInput && (
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number"
+                                min={0}
+                                max={100}
+                                placeholder="할인율 입력"
+                                value={discountInputValue}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setDiscountInputValue(v);
+                                  const n = parseFloat(v);
+                                  setDiscountPercent(!isNaN(n) && n > 0 ? n : 0);
+                                }}
+                                className="h-9 w-32 text-center"
+                              />
+                              <span className="text-sm font-medium">%</span>
+                            </div>
+                          )}
+                          {discountedTotal !== null && discountPercent > 0 && (
+                            <div className="space-y-1 pt-1 border-t text-sm">
+                              <div className="flex justify-between text-muted-foreground">
+                                <span>원래 견적</span>
+                                <span>{baseTotal.toLocaleString()}원</span>
+                              </div>
+                              <div className="flex justify-between text-red-500">
+                                <span>에누리 ({discountPercent}%)</span>
+                                <span>-{(baseTotal - discountedTotal).toLocaleString()}원</span>
+                              </div>
+                              <div className="flex justify-between font-bold text-lg pt-1 border-t text-orange-600">
+                                <span>에누리 적용가</span>
+                                <span>{discountedTotal.toLocaleString()}원</span>
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })()}
 
                   {/* 다른 상품 추가 버튼 */}
                   <Button

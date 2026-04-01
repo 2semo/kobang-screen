@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ import {
   Minus,
   Check,
   Copy,
-  Share2,
+  Camera,
   Info,
   ArrowRight,
 } from "lucide-react";
@@ -35,6 +35,8 @@ import {
   huperOptikPurchaseOptions,
   huperOptikSizeOptions,
   huperOptikFilmOptions,
+  huperOptikRoomPrices,
+  HUPER_OPTIK_MIN_GENERAL_PRICE,
   type BrandType,
   type MeshType,
   type InstallType,
@@ -45,6 +47,7 @@ import {
   type HuperOptikPurchaseType,
   type HuperOptikFilmType,
   type HuperOptikSizeType,
+  type HuperOptikRoomId,
 } from "@/lib/pricing-data";
 
 interface SpaceItemDetail {
@@ -64,9 +67,45 @@ interface SpaceItem {
 // 견적 유형: 안전방충망, 유리난간, 후퍼옵틱
 type QuoteType = 'safetyScreen' | 'glassRailing' | 'huperOptik';
 
+// 저장된 완료 견적
+interface CompletedQuote {
+  id: string;
+  label: string;      // 합산요약 라벨 (e.g. "후퍼옵틱 (공동구매견적)")
+  productName: string; // 상품명 (e.g. "후퍼옵틱 열차단필름")
+  total: number;      // 해당 상품 금액
+  sectionText: string; // 복사용 상품 상세 텍스트
+  type: QuoteType;    // 상품 유형
+  displayDetails: Array<{ label: string; value: string; indent?: boolean }>; // 선택내역 표시용
+}
+
+// 상품별 안내사항
+const PRODUCT_NOTICES: Record<QuoteType, string[]> = {
+  safetyScreen: [
+    '최종 금액은 방문 실측 후 확정될 수 있습니다.',
+    '특수 창호/사이즈는 별도 실측후 견적 가능(기본가격은 슬라이딩 도어)',
+    '설치수량 2개 이하 / 지역에 따라서 추가 출장비 발생할수도 있습니다.',
+    '모든 계산은 100mm(10cm) 단위 올림이 적용됩니다.',
+    '캐시백 및 할인 혜택은 카드사 정책에 따라 변경될 수 있습니다.',
+  ],
+  glassRailing: [
+    '최종 금액은 방문 실측 후 확정될 수 있습니다.',
+    '공동구매는 같은 아파트 단지 내 3세대 이상 함께 시공시 적용됩니다.',
+    '입면분할창은 현장에 따라 금액 변동이 있을 수 있으며, 방추가 할인은 적용되지 않습니다.',
+    '캐시백 및 할인 혜택은 카드사 정책에 따라 변경될 수 있습니다.',
+  ],
+  huperOptik: [
+    '최종 금액은 방문 실측 후 확정될 수 있습니다.',
+    '공동구매는 같은 아파트 단지 내 3세대 이상 함께 시공시 적용됩니다.',
+    '단, 주상복합이나 이면창이 있는경우 추가요금이 발생할 수 있습니다.',
+    '전용 84초과 타입은 실측을 통한 견적이 가능합니다.',
+    '캐시백 및 할인 혜택은 카드사 정책에 따라 변경될 수 있습니다.',
+  ],
+};
+
 interface QuoteState {
   step: number;
   quoteType: QuoteType | null;
+  completedQuotes: CompletedQuote[];
   // 안전방충망 관련
   brand: BrandType | null;
   installType: InstallType | null;
@@ -81,11 +120,13 @@ interface QuoteState {
   huperOptikPurchaseType: HuperOptikPurchaseType | null;
   huperOptikFilmType: HuperOptikFilmType | null;
   huperOptikSizeType: HuperOptikSizeType | null;
+  huperOptikSelectedRooms: HuperOptikRoomId[];
 }
 
 const initialState: QuoteState = {
   step: 1,
   quoteType: null,
+  completedQuotes: [],
   // 안전방충망 관련
   brand: null,
   installType: null,
@@ -100,6 +141,7 @@ const initialState: QuoteState = {
   huperOptikPurchaseType: null,
   huperOptikFilmType: null,
   huperOptikSizeType: null,
+  huperOptikSelectedRooms: [],
 };
 
 // 브랜드별, 설치유형별 사용 가능한 망타입
@@ -114,15 +156,33 @@ const availableMeshTypes: Record<BrandType, Record<InstallType, MeshType[]>> = {
   },
 };
 
-// 금액대별 캐시백 계산 (100만원 단위로 5%)
+// 금액대별 캐시백 계산 (구간별 5%)
 function calculateAmountCashback(total: number): number {
-  const millions = Math.floor(total / 1000000);
-  return millions * 50000; // 100만원당 5만원
+  if (total >= 10000000) return 500000; // 1000만 → 50만
+  if (total >= 7000000)  return 350000; // 700만 → 35만
+  if (total >= 5000000)  return 250000; // 500만 → 25만
+  if (total >= 3000000)  return 150000; // 300만 → 15만
+  if (total >= 2000000)  return 100000; // 200만 → 10만
+  if (total >= 1000000)  return  50000; // 100만 → 5만
+  return 0;
+}
+
+// 금액대별 캐시백 구간 라벨 반환
+function getCashbackTierLabel(total: number): string {
+  if (total >= 10000000) return "1000만원";
+  if (total >= 7000000)  return "700만원";
+  if (total >= 5000000)  return "500만원";
+  if (total >= 3000000)  return "300만원";
+  if (total >= 2000000)  return "200만원";
+  if (total >= 1000000)  return "100만원";
+  return "해당없음";
 }
 
 export default function QuoteCalculator() {
   const [state, setState] = useState<QuoteState>(initialState);
   const [copied, setCopied] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+  const resultAreaRef = useRef<HTMLDivElement>(null);
 
   const updateState = useCallback((updates: Partial<QuoteState>) => {
     setState((prev) => ({ ...prev, ...updates }));
@@ -139,6 +199,19 @@ export default function QuoteCalculator() {
   const prevStep = useCallback(() => {
     updateState({ step: state.step - 1 });
   }, [state.step, updateState]);
+
+  // 현재 상품을 저장하고 추가 상품 선택으로 이동
+  const addToCompletedQuotes = useCallback((quote: CompletedQuote) => {
+    setState(prev => ({
+      ...initialState,
+      completedQuotes: [...prev.completedQuotes, quote],
+    }));
+  }, []);
+
+  // 전체 초기화 (처음으로)
+  const resetAll = useCallback(() => {
+    setState(initialState);
+  }, []);
 
   // 브랜드 선택
   const selectBrand = useCallback((brand: BrandType) => {
@@ -303,17 +376,16 @@ export default function QuoteCalculator() {
     const { items, total } = calculateTotal();
     const brandInfo = brands.find((b) => b.id === state.brand);
     const installInfo = installTypes.find((i) => i.id === state.installType);
-    const amountCashback = calculateAmountCashback(total);
-    
-    // 제휴카드혜택가 계산 (첫 결제 할인 + 금액대별 캐시백 적용)
-    const finalPrice = total - CARD_BENEFITS.firstDiscount - amountCashback;
-    const monthlyPayment = Math.round(total / CARD_BENEFITS.installmentMonths);
-    const monthlyWithCashback = monthlyPayment - CARD_BENEFITS.monthlyCashback;
-    // 이용조건 충족 최종혜택가 = 제휴카드혜택가 - 11,000원 × 24개월
+    const completedTotal = state.completedQuotes.reduce((s, q) => s + q.total, 0);
+    const grandTotal = completedTotal + total;
+    const effectiveTotal = state.completedQuotes.length > 0 ? grandTotal : total;
+    const amountCashback = calculateAmountCashback(effectiveTotal);
+    const finalPrice = effectiveTotal - CARD_BENEFITS.firstDiscount - amountCashback;
     const totalCashbackBenefit = CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths;
     const totalWithCashback = finalPrice - totalCashbackBenefit;
 
-    let text = `[안전방충망 견적서]\n\n`;
+    let text = state.completedQuotes.length > 0 ? `[합산 견적서]\n\n` : `[안전방충망 견적서]\n\n`;
+    text += `[안전방충망]\n`;
     text += `브랜드: ${brandInfo?.name}\n`;
     text += `설치유형: ${installInfo?.name} (${state.meshType})\n\n`;
     text += `[상세 내역]\n`;
@@ -323,23 +395,28 @@ export default function QuoteCalculator() {
     if (state.numberKeyCount > 0) {
       text += `- 번호키: ${NUMBER_KEY_PRICE.toLocaleString()}원 × ${state.numberKeyCount}개 = ${(NUMBER_KEY_PRICE * state.numberKeyCount).toLocaleString()}원\n`;
     }
-    text += `\n*총 시공 견적: ${total.toLocaleString()}원\n`;
-    
+    if (state.completedQuotes.length > 0) {
+      text += `\n소계: ${total.toLocaleString()}원\n`;
+      text += `\n`;
+      state.completedQuotes.forEach(q => { text += q.sectionText + '\n\n'; });
+      text += `\n[합산 견적 내역]\n`;
+      const brandLabel = brandInfo?.name ?? '';
+      text += `안전방충망 (${brandLabel}): ${total.toLocaleString()}원\n`;
+      state.completedQuotes.forEach(q => { text += `${q.label}: ${q.total.toLocaleString()}원\n`; });
+      text += `*합산 총액: ${grandTotal.toLocaleString()}원\n`;
+    } else {
+      text += `\n*총 시공 견적: ${total.toLocaleString()}원\n`;
+    }
     text += `\n[제휴카드혜택 내역]\n`;
     text += `첫 결제 할인: -${CARD_BENEFITS.firstDiscount.toLocaleString()}원\n`;
     if (amountCashback > 0) {
-      text += `금액대별 캐시백 (${Math.floor(total / 1000000)}00만원 구간): -${amountCashback.toLocaleString()}원\n`;
+      text += `금액대별 캐시백 (${getCashbackTierLabel(effectiveTotal)} 구간): -${amountCashback.toLocaleString()}원\n`;
     }
     text += `*제휴카드 혜택가: ${finalPrice.toLocaleString()}원\n`;
-    
     text += `\n[이용조건 충족시]\n`;
-    text += `${CARD_BENEFITS.installmentMonths}개월 무이자 할부 + 매월 30만원 사용시 ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백\n`;
-    text += `(사용 5대가전 수리비 연장보험 5만원 가입시 혜택)\n`;
-    text += `월 ${monthlyPayment.toLocaleString()}원 - ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원\n`;
-    text += `최종 월 부담금: ${monthlyWithCashback.toLocaleString()}원\n\n`;
+    text += `매월 30만원 사용시 ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백\n`;
+    text += `(${CARD_BENEFITS.installmentMonths}개월) 총 : ${(CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths).toLocaleString()}원\n`;
     text += `*이용조건 충족 최종혜택가: ${totalWithCashback.toLocaleString()}원\n`;
-    text += `(제휴카드혜택가 - ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원 × ${CARD_BENEFITS.installmentMonths}개월)\n`;
-    
     text += `\n[안내사항]\n`;
     text += `• 최종 금액은 방문 실측 후 확정될 수 있습니다.\n`;
     text += `• 특수 창호/사이즈는 별도 실측후 견적 가능(기본가격은 슬라이딩 도어)\n`;
@@ -351,11 +428,31 @@ export default function QuoteCalculator() {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  }, [calculateTotal, state.brand, state.installType, state.meshType, state.numberKeyCount]);
+  }, [calculateTotal, state.brand, state.installType, state.meshType, state.numberKeyCount, state.completedQuotes]);
 
-  // 카카오톡 공유
-  const shareKakao = useCallback(() => {
-    alert("카카오톡 공유 기능은 실제 서비스에서 구현됩니다.");
+  // 견적 캡처
+  const captureQuote = useCallback(async () => {
+    if (!resultAreaRef.current) return;
+    setCapturing(true);
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const canvas = await html2canvas(resultAreaRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        logging: false,
+      });
+      const link = document.createElement("a");
+      link.download = "코끼리시스템_견적서.png";
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+      console.log("[captureQuote] 견적 이미지 저장 완료");
+    } catch (e) {
+      console.error("[captureQuote] 캡처 실패:", e);
+      alert("캡처에 실패했습니다. 다시 시도해주세요.");
+    } finally {
+      setCapturing(false);
+    }
   }, []);
 
   // 공간별 개수 가져오기
@@ -526,7 +623,40 @@ export default function QuoteCalculator() {
               </p>
             </div>
 
+            {/* 이미 추가된 상품 목록 */}
+            {state.completedQuotes.length > 0 && (
+              <Card className="border-primary/30 bg-primary/5">
+                <CardContent className="p-4 space-y-2">
+                  <h3 className="font-bold text-sm text-primary">추가된 상품 ({state.completedQuotes.length}개)</h3>
+                  {state.completedQuotes.map((q) => (
+                    <div key={q.id} className="flex items-center justify-between text-sm">
+                      <span className="font-medium">{q.label}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-primary font-bold">{q.total.toLocaleString()}원</span>
+                        <button
+                          onClick={() => setState(prev => ({
+                            ...prev,
+                            completedQuotes: prev.completedQuotes.filter(c => c.id !== q.id),
+                          }))}
+                          className="w-5 h-5 rounded-full bg-muted-foreground/20 flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground transition-colors text-xs"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="border-t pt-2 flex justify-between text-sm font-bold">
+                    <span>합산 소계</span>
+                    <span>{state.completedQuotes.reduce((s, q) => s + q.total, 0).toLocaleString()}원</span>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <div className="space-y-3">
+              {state.completedQuotes.length > 0 && (
+                <p className="text-sm text-center text-muted-foreground font-medium">추가할 상품을 선택하세요</p>
+              )}
               <Button
                 onClick={() => {
                   updateState({ quoteType: 'safetyScreen' });
@@ -879,6 +1009,60 @@ export default function QuoteCalculator() {
               </div>
             </div>
 
+            {/* 일반견적 - 시공 위치 선택 */}
+            {state.huperOptikPurchaseType === 'general' && state.huperOptikSizeType && state.huperOptikFilmType && (() => {
+              const toggleRoom = (roomId: HuperOptikRoomId) => {
+                const current = state.huperOptikSelectedRooms;
+                const next = current.includes(roomId)
+                  ? current.filter((r) => r !== roomId)
+                  : [...current, roomId];
+                updateState({ huperOptikSelectedRooms: next });
+              };
+              const roomTotal = huperOptikRoomPrices
+                .filter((r) => state.huperOptikSelectedRooms.includes(r.id))
+                .reduce((sum, r) => sum + r.prices[state.huperOptikSizeType!][state.huperOptikFilmType!], 0);
+              const belowMin = roomTotal < HUPER_OPTIK_MIN_GENERAL_PRICE;
+              return (
+                <div className="space-y-3">
+                  <h3 className="font-bold">시공 위치 선택</h3>
+                  <p className="text-xs text-muted-foreground">시공할 공간을 선택해주세요. (최소 계약금액 100만원)</p>
+                  <div className="space-y-2">
+                    {huperOptikRoomPrices.map((room) => {
+                      const price = room.prices[state.huperOptikSizeType!][state.huperOptikFilmType!];
+                      const selected = state.huperOptikSelectedRooms.includes(room.id);
+                      return (
+                        <Card
+                          key={room.id}
+                          className={`cursor-pointer transition-all ${
+                            selected ? "ring-2 ring-primary border-primary" : "hover:border-primary/50"
+                          }`}
+                          onClick={() => toggleRoom(room.id)}
+                        >
+                          <CardContent className="p-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${selected ? 'bg-primary border-primary' : 'border-muted-foreground'}`}>
+                                  {selected && <Check className="w-3 h-3 text-primary-foreground" />}
+                                </div>
+                                <span className="font-medium text-sm">{room.name}</span>
+                              </div>
+                              <span className="text-sm font-bold">{price.toLocaleString()}원</span>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                  {state.huperOptikSelectedRooms.length > 0 && (
+                    <div className={`p-3 rounded-lg text-sm font-bold flex justify-between ${belowMin ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'}`}>
+                      <span>선택 합계</span>
+                      <span>{roomTotal.toLocaleString()}원{belowMin ? ' (최소 100만원 미달)' : ''}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             <div className="flex gap-3 pt-4">
               <Button variant="outline" onClick={prevStep} className="flex-1">
                 <ChevronLeft className="w-4 h-4 mr-1" />
@@ -886,7 +1070,15 @@ export default function QuoteCalculator() {
               </Button>
               <Button
                 onClick={() => goToStep(3)}
-                disabled={!state.huperOptikPurchaseType || !state.huperOptikSizeType || !state.huperOptikFilmType}
+                disabled={
+                  !state.huperOptikPurchaseType || !state.huperOptikSizeType || !state.huperOptikFilmType ||
+                  (state.huperOptikPurchaseType === 'general' && (
+                    state.huperOptikSelectedRooms.length === 0 ||
+                    huperOptikRoomPrices
+                      .filter((r) => state.huperOptikSelectedRooms.includes(r.id))
+                      .reduce((sum, r) => sum + r.prices[state.huperOptikSizeType!][state.huperOptikFilmType!], 0) < HUPER_OPTIK_MIN_GENERAL_PRICE
+                  ))
+                }
                 className="flex-1"
               >
                 견적 확인
@@ -898,21 +1090,31 @@ export default function QuoteCalculator() {
 
         {/* Step 3: 유리난간 - 견적 결과 */}
         {state.step === 3 && state.quoteType === 'glassRailing' && (
-          <div className="space-y-6">
+          <div className="space-y-6" ref={resultAreaRef}>
             <div>
               <h2 className="text-xl font-bold mb-2">견적 결과</h2>
-              <p className="text-muted-foreground">
-                아파트 유리난간 견적
-              </p>
+              {state.completedQuotes.length === 0 ? (
+                <p className="text-muted-foreground">아파트 유리난간 견적</p>
+              ) : (
+                <ol className="text-muted-foreground space-y-0.5 text-sm list-none">
+                  <li>1. 아파트 유리난간 견적</li>
+                  {state.completedQuotes.map((q, i) => (
+                    <li key={q.id}>{i + 2}. {q.productName} 견적</li>
+                  ))}
+                </ol>
+              )}
             </div>
 
             {(() => {
               const total = state.glassRailingPurchaseType && state.glassRailingType && state.glassRailingWindowCount
                 ? getGlassRailingPrice(state.glassRailingPurchaseType, state.glassRailingType, state.glassRailingWindowCount)
                 : 0;
-              const amountCashback = calculateAmountCashback(total);
-              const finalPrice = total - CARD_BENEFITS.firstDiscount - amountCashback;
-              const monthlyPayment = Math.round(total / CARD_BENEFITS.installmentMonths);
+              const completedTotal = state.completedQuotes.reduce((s, q) => s + q.total, 0);
+              const grandTotal = completedTotal + total;
+              const effectiveTotal = state.completedQuotes.length > 0 ? grandTotal : total;
+              const amountCashback = calculateAmountCashback(effectiveTotal);
+              const finalPrice = effectiveTotal - CARD_BENEFITS.firstDiscount - amountCashback;
+              const monthlyPayment = Math.round(effectiveTotal / CARD_BENEFITS.installmentMonths);
               const monthlyWithCashback = monthlyPayment - CARD_BENEFITS.monthlyCashback;
               const totalWithCashback = finalPrice - (CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths);
 
@@ -933,8 +1135,11 @@ export default function QuoteCalculator() {
                         </p>
                       </div>
 
+                      {/* 선택 내역 1: 유리난간 (현재 상품) */}
                       <div className="space-y-3">
-                        <h4 className="font-bold text-sm">선택 내역</h4>
+                        <h4 className="font-bold text-sm">
+                          {state.completedQuotes.length > 0 ? '선택 내역 1 : 아파트 유리난간' : '선택 내역'}
+                        </h4>
                         <div className="space-y-2 text-sm">
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">구매방식</span>
@@ -949,14 +1154,58 @@ export default function QuoteCalculator() {
                             <span className="font-medium">{windowCountInfo?.name}</span>
                           </div>
                         </div>
+                        <div className="flex justify-between pt-2 border-t text-sm">
+                          <span className="font-semibold">아파트 유리난간 소계</span>
+                          <span className="font-semibold">{total.toLocaleString()}원</span>
+                        </div>
                       </div>
 
-                      <div className="flex justify-between pt-3 border-t">
-                        <span className="font-bold">총 시공 견적</span>
-                        <span className="font-bold text-lg">
-                          {total.toLocaleString()}원
-                        </span>
-                      </div>
+                      {/* 선택 내역 2, 3, ...: 완료된 상품들 */}
+                      {state.completedQuotes.map((q, i) => (
+                        <div key={q.id} className="space-y-3 pt-3 border-t">
+                          <h4 className="font-bold text-sm">선택 내역 {i + 2} : {q.productName}</h4>
+                          <div className="space-y-2 text-sm">
+                            {q.displayDetails.map((d, j) => (
+                              <div key={j} className={`flex justify-between ${d.indent ? 'pl-3' : ''}`}>
+                                <span className="text-muted-foreground">{d.label}</span>
+                                <span className="font-medium text-right">{d.value}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex justify-between pt-2 border-t text-sm">
+                            <span className="font-semibold">{q.productName} 소계</span>
+                            <span className="font-semibold">{q.total.toLocaleString()}원</span>
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* 합산 견적 내역 */}
+                      {state.completedQuotes.length > 0 && (
+                        <div className="p-3 bg-secondary/30 rounded-lg space-y-2 text-sm border-t pt-3">
+                          <p className="text-xs font-bold text-muted-foreground">합산 견적 내역</p>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">아파트 유리난간 ({purchaseTypeInfo?.name})</span>
+                            <span>{total.toLocaleString()}원</span>
+                          </div>
+                          {state.completedQuotes.map(q => (
+                            <div key={q.id} className="flex justify-between">
+                              <span className="text-muted-foreground">{q.label}</span>
+                              <span>{q.total.toLocaleString()}원</span>
+                            </div>
+                          ))}
+                          <div className="flex justify-between font-bold border-t pt-2">
+                            <span>합산 총액</span>
+                            <span>{grandTotal.toLocaleString()}원</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {state.completedQuotes.length === 0 && (
+                        <div className="flex justify-between pt-3 border-t">
+                          <span className="font-bold">총 시공 견적</span>
+                          <span className="font-bold text-lg">{total.toLocaleString()}원</span>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
 
@@ -973,7 +1222,7 @@ export default function QuoteCalculator() {
                         {amountCashback > 0 && (
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">
-                              금액대별 캐시백 ({Math.floor(total / 1000000)}00만원 구간)
+                              금액대별 캐시백 ({getCashbackTierLabel(effectiveTotal)} 구간)
                             </span>
                             <span className="text-destructive font-medium">
                               -{amountCashback.toLocaleString()}원
@@ -988,49 +1237,51 @@ export default function QuoteCalculator() {
                         </div>
                       </div>
 
-                      <div className="p-4 bg-background rounded-lg space-y-3">
-                        <div className="text-center">
-                          <p className="text-xs text-muted-foreground">
-                            {CARD_BENEFITS.installmentMonths}개월 무이자 할부 + 매월 30만원 사용시{" "}
-                            {CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백
-                          </p>
-                          <p className="text-[10px] text-muted-foreground/70">
-                            (사용 5대가전 수리비 연장보험 5만원 가입시 혜택)
-                          </p>
-                        </div>
-                        <div className="flex items-center justify-center gap-2 text-lg">
-                          <span>월</span>
-                          <span className="font-bold">
-                            {monthlyPayment.toLocaleString()}원
-                          </span>
-                          <span>-</span>
-                          <span className="text-destructive">
-                            {CARD_BENEFITS.monthlyCashback.toLocaleString()}원
-                          </span>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-sm text-muted-foreground">최종 월 부담금</p>
-                          <p className="text-2xl font-bold text-primary">
-                            {monthlyWithCashback.toLocaleString()}원
-                          </p>
-                        </div>
-                        <div className="pt-3 border-t">
-                          <div className="flex items-center justify-center gap-4">
-                            <div className="text-left">
-                              <p className="text-xs text-muted-foreground">이용조건 충족</p>
-                              <p className="text-lg font-bold text-foreground">최종혜택가</p>
-                            </div>
-                            <p className="text-3xl font-bold text-primary">
-                              {totalWithCashback.toLocaleString()}원
-                            </p>
-                          </div>
-                          <p className="text-xs text-muted-foreground text-center mt-1">
-                            (제휴카드혜택가 - {CARD_BENEFITS.monthlyCashback.toLocaleString()}원 × {CARD_BENEFITS.installmentMonths}개월)
-                          </p>
+                      <div className="p-4 bg-background rounded-lg space-y-2">
+                        <p className="text-xs text-muted-foreground text-center">[이용조건 충족시]</p>
+                        <p className="text-sm text-center">
+                          매월 30만원 사용시 {CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백
+                        </p>
+                        <p className="text-sm text-center text-muted-foreground">
+                          ({CARD_BENEFITS.installmentMonths}개월) 총 : {(CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths).toLocaleString()}원
+                        </p>
+                        <div className="pt-2 border-t text-center">
+                          <p className="text-sm text-muted-foreground">*이용조건 충족 최종혜택가</p>
+                          <p className="text-3xl font-bold text-primary">{totalWithCashback.toLocaleString()}원</p>
                         </div>
                       </div>
                     </CardContent>
                   </Card>
+
+                  {/* 다른 상품 추가 버튼 */}
+                  <Button
+                    className="w-full h-12 font-semibold"
+                    variant="outline"
+                    onClick={() => {
+                      const sectionText =
+                        `[고구려 파노라마 유리난간]\n` +
+                        `구매방식: ${purchaseTypeInfo?.name}\n` +
+                        `타입: ${railingTypeInfo?.name}\n` +
+                        `거실창수: ${windowCountInfo?.name}\n` +
+                        `소계: ${total.toLocaleString()}원`;
+                      addToCompletedQuotes({
+                        id: Date.now().toString(),
+                        label: `아파트 유리난간 (${purchaseTypeInfo?.name})`,
+                        productName: '아파트 유리난간',
+                        total,
+                        sectionText,
+                        type: 'glassRailing',
+                        displayDetails: [
+                          { label: '구매방식', value: purchaseTypeInfo?.name ?? '' },
+                          { label: '타입', value: railingTypeInfo?.name ?? '' },
+                          { label: '거실창수', value: windowCountInfo?.name ?? '' },
+                        ],
+                      });
+                    }}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    다른 상품 추가하기
+                  </Button>
 
                   <div className="flex gap-3">
                     <Button
@@ -1041,27 +1292,32 @@ export default function QuoteCalculator() {
                         const railingTypeInfo = glassRailingTypeOptions.find(o => o.id === state.glassRailingType);
                         const windowCountInfo = glassRailingWindowCountOptions.find(o => o.id === state.glassRailingWindowCount);
                         
-                        let text = `[고구려 파노라마 유리난간 견적서]\n\n`;
+                        let text = state.completedQuotes.length > 0 ? `[합산 견적서]\n\n` : `[고구려 파노라마 유리난간 견적서]\n\n`;
+                        text += `[고구려 파노라마 유리난간]\n`;
                         text += `구매방식: ${purchaseTypeInfo?.name}\n`;
                         text += `타입: ${railingTypeInfo?.name}\n`;
-                        text += `거실창수: ${windowCountInfo?.name}\n\n`;
-                        text += `*총 시공 견적: ${total.toLocaleString()}원\n`;
+                        text += `거실창수: ${windowCountInfo?.name}\n`;
+                        if (state.completedQuotes.length > 0) {
+                          text += `소계: ${total.toLocaleString()}원\n`;
+                          text += `\n`;
+                          state.completedQuotes.forEach(q => { text += q.sectionText + '\n\n'; });
+                          text += `\n[합산 견적 내역]\n`;
+                          text += `아파트 유리난간 (${purchaseTypeInfo?.name}): ${total.toLocaleString()}원\n`;
+                          state.completedQuotes.forEach(q => { text += `${q.label}: ${q.total.toLocaleString()}원\n`; });
+                          text += `*합산 총액: ${grandTotal.toLocaleString()}원\n`;
+                        } else {
+                          text += `\n*총 시공 견적: ${total.toLocaleString()}원\n`;
+                        }
                         text += `\n[제휴카드혜택 내역]\n`;
                         text += `첫 결제 할인: -${CARD_BENEFITS.firstDiscount.toLocaleString()}원\n`;
                         if (amountCashback > 0) {
-                          text += `금액대별 캐시백 (${Math.floor(total / 1000000)}00만원 구간): -${amountCashback.toLocaleString()}원\n`;
+                          text += `금액대별 캐시백 (${getCashbackTierLabel(effectiveTotal)} 구간): -${amountCashback.toLocaleString()}원\n`;
                         }
                         text += `*제휴카드 혜택가: ${finalPrice.toLocaleString()}원\n`;
                         text += `\n[이용조건 충족시]\n`;
-                        text += `${CARD_BENEFITS.installmentMonths}개월 무이자 할부 + 매월 30만원 사용시 ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백\n`;
-                        text += `(사용 5대가전 수리비 연장보험 5만원 가입시 혜택)\n`;
-                        text += `월 ${monthlyPayment.toLocaleString()}원 - ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원\n`;
-                        text += `최종 월 부담금: ${monthlyWithCashback.toLocaleString()}원\n\n`;
+                        text += `매월 30만원 사용시 ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백\n`;
+                        text += `(${CARD_BENEFITS.installmentMonths}개월) 총 : ${(CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths).toLocaleString()}원\n`;
                         text += `*이용조건 충족 최종혜택가: ${totalWithCashback.toLocaleString()}원\n`;
-                        text += `(제휴카드혜택가 - ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원 × ${CARD_BENEFITS.installmentMonths}개월)\n`;
-                        text += `\n[견적 포함사항]\n`;
-                        text += `• 고구려 안전방충망(0.4mm) 설치 포함\n`;
-                        text += `• 고구려 안전방충망, 행위허가 대행비용, 입주민동의서 대행비용, 부가세가 모두 포함된 금액입니다.\n`;
                         text += `\n[안내사항]\n`;
                         text += `• 최종 금액은 방문 실측 후 확정될 수 있습니다.\n`;
                         text += `• 공동구매는 같은 아파트 단지 내 3세대 이상 함께 시공시 적용됩니다.\n`;
@@ -1084,21 +1340,22 @@ export default function QuoteCalculator() {
                     <Button
                       variant="outline"
                       className="flex-1"
-                      onClick={shareKakao}
+                      onClick={captureQuote}
+                      disabled={capturing}
                     >
-                      <Share2 className="w-4 h-4 mr-2" />
-                      카톡 공유
+                      <Camera className="w-4 h-4 mr-2" />
+                      {capturing ? "캡처 중..." : "견적 캡처"}
                     </Button>
                   </div>
 
-                  {/* 견적 포함사항 */}
+                  {/* 유리난간 견적 포함사항 */}
                   <Card className="bg-primary/10 border-primary/30">
                     <CardContent className="p-4">
-                      <h4 className="font-bold text-base mb-3 text-primary">견적 포함사항</h4>
+                      <h4 className="font-bold text-base mb-3 text-primary">유리난간 견적 포함사항</h4>
                       <ul className="text-sm space-y-2">
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
-                          <span className="font-medium">고구려 안전방충망(0.4mm) 설치 포함</span>
+                          <span className="font-medium">고구려 안전방충망(0.4mm) 설치 포함 (거실)</span>
                         </li>
                         <li className="flex items-start gap-2">
                           <Check className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
@@ -1112,10 +1369,12 @@ export default function QuoteCalculator() {
                     <CardContent className="p-4">
                       <h4 className="font-bold text-sm mb-2">안내 사항</h4>
                       <ul className="text-xs text-muted-foreground space-y-1">
-                        <li>• 최종 금액은 방문 실측 후 확정될 수 있습니다.</li>
-                        <li>• 공동구매는 같은 아파트 단지 내 3세대 이상 함께 시공시 적용됩니다.</li>
-                        <li>• 입면분할창은 현장에 따라 금액 변동이 있을 수 있으며, 방추가 할인은 적용되지 않습니다.</li>
-                        <li>• 캐시백 및 할인 혜택은 카드사 정책에 따라 변경될 수 있습니다.</li>
+                        {Array.from(new Set([
+                          ...state.completedQuotes.flatMap(q => PRODUCT_NOTICES[q.type]),
+                          ...PRODUCT_NOTICES['glassRailing'],
+                        ])).map((notice, i) => (
+                          <li key={i}>• {notice}</li>
+                        ))}
                       </ul>
                     </CardContent>
                   </Card>
@@ -1123,7 +1382,7 @@ export default function QuoteCalculator() {
                   <div className="flex gap-3">
                     <Button
                       variant="outline"
-                      onClick={() => goToStep(1)}
+                      onClick={resetAll}
                       className="flex-1"
                     >
                       처음으로
@@ -1145,21 +1404,36 @@ export default function QuoteCalculator() {
 
         {/* Step 3: 후퍼옵틱 - 견적 결과 */}
         {state.step === 3 && state.quoteType === 'huperOptik' && (
-          <div className="space-y-6">
+          <div className="space-y-6" ref={resultAreaRef}>
             <div>
               <h2 className="text-xl font-bold mb-2">견적 결과</h2>
-              <p className="text-muted-foreground">
-                후퍼옵틱 열차단필름 견적
-              </p>
+              {state.completedQuotes.length === 0 ? (
+                <p className="text-muted-foreground">후퍼옵틱 열차단필름 견적</p>
+              ) : (
+                <ol className="text-muted-foreground space-y-0.5 text-sm list-none">
+                  <li>1. 후퍼옵틱 열차단필름 견적</li>
+                  {state.completedQuotes.map((q, i) => (
+                    <li key={q.id}>{i + 2}. {q.productName} 견적</li>
+                  ))}
+                </ol>
+              )}
             </div>
 
             {(() => {
+              const isGeneral = state.huperOptikPurchaseType === 'general';
               const total = state.huperOptikPurchaseType && state.huperOptikFilmType && state.huperOptikSizeType
-                ? getHuperOptikPrice(state.huperOptikPurchaseType, state.huperOptikFilmType, state.huperOptikSizeType)
+                ? isGeneral
+                  ? huperOptikRoomPrices
+                      .filter((r) => state.huperOptikSelectedRooms.includes(r.id))
+                      .reduce((sum, r) => sum + r.prices[state.huperOptikSizeType!][state.huperOptikFilmType!], 0)
+                  : getHuperOptikPrice(state.huperOptikPurchaseType, state.huperOptikFilmType, state.huperOptikSizeType)
                 : 0;
-              const amountCashback = calculateAmountCashback(total);
-              const finalPrice = total - CARD_BENEFITS.firstDiscount - amountCashback;
-              const monthlyPayment = Math.round(total / CARD_BENEFITS.installmentMonths);
+              const completedTotal = state.completedQuotes.reduce((s, q) => s + q.total, 0);
+              const grandTotal = completedTotal + total;
+              const effectiveTotal = state.completedQuotes.length > 0 ? grandTotal : total;
+              const amountCashback = calculateAmountCashback(effectiveTotal);
+              const finalPrice = effectiveTotal - CARD_BENEFITS.firstDiscount - amountCashback;
+              const monthlyPayment = Math.round(effectiveTotal / CARD_BENEFITS.installmentMonths);
               const monthlyWithCashback = monthlyPayment - CARD_BENEFITS.monthlyCashback;
               const totalWithCashback = finalPrice - (CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths);
 
@@ -1172,16 +1446,17 @@ export default function QuoteCalculator() {
                   <Card>
                     <CardContent className="p-5 space-y-4">
                       <div className="text-center pb-4 border-b">
-                        <p className="text-sm text-muted-foreground mb-1">
-                          예상 견적 결과
-                        </p>
+                        <p className="text-sm text-muted-foreground mb-1">예상 견적 결과</p>
                         <p className="text-xs text-muted-foreground">
                           정확한 최종 견적은 방문 실측 후 확정됩니다. (예상 견적은 참고용)
                         </p>
                       </div>
 
+                      {/* 선택 내역 1: 현재 상품 (후퍼옵틱) */}
                       <div className="space-y-3">
-                        <h4 className="font-bold text-sm">선택 내역</h4>
+                        <h4 className="font-bold text-sm">
+                          {state.completedQuotes.length > 0 ? '선택 내역 1 : 후퍼옵틱 열차단필름' : '선택 내역'}
+                        </h4>
                         <div className="space-y-2 text-sm">
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">구매방식</span>
@@ -1199,15 +1474,65 @@ export default function QuoteCalculator() {
                             <span className="text-muted-foreground">보증기간</span>
                             <span className="font-medium">{filmTypeInfo?.subtitle}</span>
                           </div>
+                          {isGeneral && state.huperOptikSizeType && state.huperOptikFilmType && (
+                            <div className="pt-2 border-t space-y-1">
+                              <p className="text-xs text-muted-foreground font-semibold">시공 위치별 금액</p>
+                              {huperOptikRoomPrices
+                                .filter((r) => state.huperOptikSelectedRooms.includes(r.id))
+                                .map((r) => (
+                                  <div key={r.id} className="flex justify-between">
+                                    <span className="text-muted-foreground">· {r.name}</span>
+                                    <span>{r.prices[state.huperOptikSizeType!][state.huperOptikFilmType!].toLocaleString()}원</span>
+                                  </div>
+                                ))}
+                            </div>
+                          )}
                         </div>
                       </div>
-
                       <div className="flex justify-between pt-3 border-t">
-                        <span className="font-bold">총 시공 견적</span>
-                        <span className="font-bold text-lg">
-                          {total.toLocaleString()}원
-                        </span>
+                        <span className="font-bold">{state.completedQuotes.length > 0 ? '후퍼옵틱 소계' : '총 시공 견적'}</span>
+                        <span className="font-bold text-lg">{total.toLocaleString()}원</span>
                       </div>
+
+                      {/* 선택 내역 2, 3...: 완료된 상품들 */}
+                      {state.completedQuotes.map((q, i) => (
+                        <div key={q.id} className="space-y-3 pt-4 border-t">
+                          <h4 className="font-bold text-sm">선택 내역 {i + 2} : {q.productName}</h4>
+                          <div className="space-y-2 text-sm">
+                            {q.displayDetails.map((d, j) => (
+                              <div key={j} className={`flex justify-between ${d.indent ? 'pl-3' : ''}`}>
+                                <span className="text-muted-foreground">{d.label}</span>
+                                <span className="font-medium">{d.value}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex justify-between pt-2 border-t">
+                            <span className="font-bold">{q.productName} 소계</span>
+                            <span className="font-bold">{q.total.toLocaleString()}원</span>
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* 합산 견적 내역 */}
+                      {state.completedQuotes.length > 0 && (
+                        <div className="mt-1 p-3 bg-secondary/30 rounded-lg space-y-2 text-sm border-t pt-4">
+                          <p className="text-xs font-bold text-muted-foreground">합산 견적 내역</p>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">후퍼옵틱 ({purchaseTypeInfo?.name})</span>
+                            <span>{total.toLocaleString()}원</span>
+                          </div>
+                          {state.completedQuotes.map(q => (
+                            <div key={q.id} className="flex justify-between">
+                              <span className="text-muted-foreground">{q.label}</span>
+                              <span>{q.total.toLocaleString()}원</span>
+                            </div>
+                          ))}
+                          <div className="flex justify-between font-bold border-t pt-2">
+                            <span>합산 총액</span>
+                            <span>{grandTotal.toLocaleString()}원</span>
+                          </div>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
 
@@ -1224,7 +1549,7 @@ export default function QuoteCalculator() {
                         {amountCashback > 0 && (
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">
-                              금액대별 캐시백 ({Math.floor(total / 1000000)}00만원 구간)
+                              금액대별 캐시백 ({getCashbackTierLabel(effectiveTotal)} 구간)
                             </span>
                             <span className="text-destructive font-medium">
                               -{amountCashback.toLocaleString()}원
@@ -1239,74 +1564,111 @@ export default function QuoteCalculator() {
                         </div>
                       </div>
 
-                      <div className="p-4 bg-background rounded-lg space-y-3">
-                        <div className="text-center">
-                          <p className="text-xs text-muted-foreground">
-                            {CARD_BENEFITS.installmentMonths}개월 무이자 할부 + 매월 30만원 사용시{" "}
-                            {CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백
-                          </p>
-                          <p className="text-[10px] text-muted-foreground/70">
-                            (사용 5대가전 수리비 연장보험 5만원 가입시 혜택)
-                          </p>
-                        </div>
-                        <div className="flex items-center justify-center gap-2 text-lg">
-                          <span>월</span>
-                          <span className="font-bold">
-                            {monthlyPayment.toLocaleString()}원
-                          </span>
-                          <span>-</span>
-                          <span className="text-destructive">
-                            {CARD_BENEFITS.monthlyCashback.toLocaleString()}원
-                          </span>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-sm text-muted-foreground">최종 월 부담금</p>
-                          <p className="text-2xl font-bold text-primary">
-                            {monthlyWithCashback.toLocaleString()}원
-                          </p>
-                        </div>
-                        <div className="pt-3 border-t">
-                          <div className="flex items-center justify-center gap-4">
-                            <div className="text-left">
-                              <p className="text-xs text-muted-foreground">이용조건 충족</p>
-                              <p className="text-lg font-bold text-foreground">최종혜택가</p>
-                            </div>
-                            <p className="text-3xl font-bold text-primary">
-                              {totalWithCashback.toLocaleString()}원
-                            </p>
-                          </div>
-                          <p className="text-xs text-muted-foreground text-center mt-1">
-                            (제휴카드혜택가 - {CARD_BENEFITS.monthlyCashback.toLocaleString()}원 × {CARD_BENEFITS.installmentMonths}개월)
-                          </p>
+                      <div className="p-4 bg-background rounded-lg space-y-2">
+                        <p className="text-xs text-muted-foreground text-center">[이용조건 충족시]</p>
+                        <p className="text-sm text-center">
+                          매월 30만원 사용시 {CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백
+                        </p>
+                        <p className="text-sm text-center text-muted-foreground">
+                          ({CARD_BENEFITS.installmentMonths}개월) 총 : {(CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths).toLocaleString()}원
+                        </p>
+                        <div className="pt-2 border-t text-center">
+                          <p className="text-sm text-muted-foreground">*이용조건 충족 최종혜택가</p>
+                          <p className="text-3xl font-bold text-primary">{totalWithCashback.toLocaleString()}원</p>
                         </div>
                       </div>
                     </CardContent>
                   </Card>
+
+                  {/* 다른 상품 추가 버튼 */}
+                  <Button
+                    className="w-full h-12 font-semibold"
+                    variant="outline"
+                    onClick={() => {
+                      let sectionText = `[후퍼옵틱 열차단필름]\n`;
+                      sectionText += `구매방식: ${purchaseTypeInfo?.name}\n`;
+                      sectionText += `평형: ${sizeTypeInfo?.name}\n`;
+                      sectionText += `필름타입: ${filmTypeInfo?.name}\n`;
+                      if (isGeneral && state.huperOptikSizeType && state.huperOptikFilmType) {
+                        huperOptikRoomPrices
+                          .filter((r) => state.huperOptikSelectedRooms.includes(r.id))
+                          .forEach((r) => {
+                            sectionText += `- ${r.name}: ${r.prices[state.huperOptikSizeType!][state.huperOptikFilmType!].toLocaleString()}원\n`;
+                          });
+                      }
+                      sectionText += `소계: ${total.toLocaleString()}원`;
+                      const displayDetails: CompletedQuote['displayDetails'] = [
+                        { label: '구매방식', value: purchaseTypeInfo?.name ?? '' },
+                        { label: '평형', value: sizeTypeInfo?.name ?? '' },
+                        { label: '필름타입', value: filmTypeInfo?.name ?? '' },
+                        { label: '보증기간', value: filmTypeInfo?.subtitle ?? '' },
+                      ];
+                      if (isGeneral && state.huperOptikSizeType && state.huperOptikFilmType) {
+                        huperOptikRoomPrices
+                          .filter((r) => state.huperOptikSelectedRooms.includes(r.id))
+                          .forEach((r) => {
+                            displayDetails.push({
+                              label: `· ${r.name}`,
+                              value: `${r.prices[state.huperOptikSizeType!][state.huperOptikFilmType!].toLocaleString()}원`,
+                              indent: true,
+                            });
+                          });
+                      }
+                      addToCompletedQuotes({
+                        id: Date.now().toString(),
+                        label: `후퍼옵틱 (${purchaseTypeInfo?.name})`,
+                        productName: '후퍼옵틱 열차단필름',
+                        total,
+                        sectionText,
+                        type: 'huperOptik',
+                        displayDetails,
+                      });
+                    }}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    다른 상품 추가하기
+                  </Button>
 
                   <div className="flex gap-3">
                     <Button
                       variant="outline"
                       className="flex-1"
                       onClick={() => {
-                        let text = `[후퍼옵틱 열차단필름 견적서]\n\n`;
+                        let text = state.completedQuotes.length > 0 ? `[합산 견적서]\n\n` : `[후퍼옵틱 열차단필름 견적서]\n\n`;
+                        text += `[후퍼옵틱 열차단필름]\n`;
                         text += `구매방식: ${purchaseTypeInfo?.name}\n`;
                         text += `평형: ${sizeTypeInfo?.name}\n`;
                         text += `필름타입: ${filmTypeInfo?.name}\n`;
-                        text += `보증기간: ${filmTypeInfo?.subtitle}\n\n`;
-                        text += `*총 시공 견적: ${total.toLocaleString()}원\n`;
+                        text += `보증기간: ${filmTypeInfo?.subtitle}\n`;
+                        if (isGeneral && state.huperOptikSizeType && state.huperOptikFilmType) {
+                          text += `\n[시공 위치별 금액]\n`;
+                          huperOptikRoomPrices
+                            .filter((r) => state.huperOptikSelectedRooms.includes(r.id))
+                            .forEach((r) => {
+                              text += `- ${r.name}: ${r.prices[state.huperOptikSizeType!][state.huperOptikFilmType!].toLocaleString()}원\n`;
+                            });
+                        }
+                        if (state.completedQuotes.length > 0) {
+                          text += `소계: ${total.toLocaleString()}원\n`;
+                          text += `\n`;
+                          state.completedQuotes.forEach(q => { text += q.sectionText + '\n\n'; });
+                          text += `\n[합산 견적 내역]\n`;
+                          text += `후퍼옵틱 (${purchaseTypeInfo?.name}): ${total.toLocaleString()}원\n`;
+                          state.completedQuotes.forEach(q => { text += `${q.label}: ${q.total.toLocaleString()}원\n`; });
+                          text += `*합산 총액: ${grandTotal.toLocaleString()}원\n`;
+                        } else {
+                          text += `\n*총 시공 견적: ${total.toLocaleString()}원\n`;
+                        }
                         text += `\n[제휴카드혜택 내역]\n`;
                         text += `첫 결제 할인: -${CARD_BENEFITS.firstDiscount.toLocaleString()}원\n`;
                         if (amountCashback > 0) {
-                          text += `금액대별 캐시백 (${Math.floor(total / 1000000)}00만원 구간): -${amountCashback.toLocaleString()}원\n`;
+                          text += `금액대별 캐시백 (${getCashbackTierLabel(effectiveTotal)} 구간): -${amountCashback.toLocaleString()}원\n`;
                         }
                         text += `*제휴카드 혜택가: ${finalPrice.toLocaleString()}원\n`;
                         text += `\n[이용조건 충족시]\n`;
-                        text += `${CARD_BENEFITS.installmentMonths}개월 무이자 할부 + 매월 30만원 사용시 ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백\n`;
-                        text += `(사용 5대가전 수리비 연장보험 5만원 가입시 혜택)\n`;
-                        text += `월 ${monthlyPayment.toLocaleString()}원 - ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원\n`;
-                        text += `최종 월 부담금: ${monthlyWithCashback.toLocaleString()}원\n\n`;
+                        text += `매월 30만원 사용시 ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백\n`;
+                        text += `(${CARD_BENEFITS.installmentMonths}개월) 총 : ${(CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths).toLocaleString()}원\n`;
                         text += `*이용조건 충족 최종혜택가: ${totalWithCashback.toLocaleString()}원\n`;
-                        text += `(제휴카드혜택가 - ${CARD_BENEFITS.monthlyCashback.toLocaleString()}원 × ${CARD_BENEFITS.installmentMonths}개월)\n`;
                         text += `\n[안내사항]\n`;
                         text += `• 최종 금액은 방문 실측 후 확정될 수 있습니다.\n`;
                         text += `• 공동구매는 같은 아파트 단지 내 3세대 이상 함께 시공시 적용됩니다.\n`;
@@ -1330,22 +1692,42 @@ export default function QuoteCalculator() {
                     <Button
                       variant="outline"
                       className="flex-1"
-                      onClick={shareKakao}
+                      onClick={captureQuote}
+                      disabled={capturing}
                     >
-                      <Share2 className="w-4 h-4 mr-2" />
-                      카톡 공유
+                      <Camera className="w-4 h-4 mr-2" />
+                      {capturing ? "캡처 중..." : "견적 캡처"}
                     </Button>
                   </div>
+
+                  {state.completedQuotes.some(q => q.type === 'glassRailing') && (
+                    <Card className="bg-primary/10 border-primary/30">
+                      <CardContent className="p-4">
+                        <h4 className="font-bold text-base mb-3 text-primary">유리난간 견적 포함사항</h4>
+                        <ul className="text-sm space-y-2">
+                          <li className="flex items-start gap-2">
+                            <Check className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                            <span className="font-medium">고구려 안전방충망(0.4mm) 설치 포함 (거실)</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <Check className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                            <span>고구려 안전방충망, 행위허가 대행비용, 입주민동의서 대행비용, 부가세가 모두 포함된 금액입니다.</span>
+                          </li>
+                        </ul>
+                      </CardContent>
+                    </Card>
+                  )}
 
                   <Card className="bg-secondary/50">
                     <CardContent className="p-4">
                       <h4 className="font-bold text-sm mb-2">안내 사항</h4>
                       <ul className="text-xs text-muted-foreground space-y-1">
-                        <li>• 최종 금액은 방문 실측 후 확정될 수 있습니다.</li>
-                        <li>• 공동구매는 같은 아파트 단지 내 3세대 이상 함께 시공시 적용됩니다.</li>
-                        <li>• 단, 주상복합이나 이면창이 있는경우 추가요금이 발생할 수 있습니다.</li>
-                        <li>• 전용 84초과 타입은 실측을 통한 견적이 가능합니다.</li>
-                        <li>• 캐시백 및 할인 혜택은 카드사 정책에 따라 변경될 수 있습니다.</li>
+                        {Array.from(new Set([
+                          ...state.completedQuotes.flatMap(q => PRODUCT_NOTICES[q.type]),
+                          ...PRODUCT_NOTICES['huperOptik'],
+                        ])).map((notice, i) => (
+                          <li key={i}>• {notice}</li>
+                        ))}
                       </ul>
                     </CardContent>
                   </Card>
@@ -1353,7 +1735,7 @@ export default function QuoteCalculator() {
                   <div className="flex gap-3">
                     <Button
                       variant="outline"
-                      onClick={() => goToStep(1)}
+                      onClick={resetAll}
                       className="flex-1"
                     >
                       처음으로
@@ -1782,12 +2164,19 @@ export default function QuoteCalculator() {
 
         {/* Step 6: 견적 결과 */}
         {state.step === 6 && (
-          <div className="space-y-6">
+          <div className="space-y-6" ref={resultAreaRef}>
             <div>
               <h2 className="text-xl font-bold mb-2">견적 결과</h2>
-              <p className="text-muted-foreground">
-                안전방범·추락방지 방충망 견적
-              </p>
+              {state.completedQuotes.length === 0 ? (
+                <p className="text-muted-foreground">안전방범·추락방지 방충망 견적</p>
+              ) : (
+                <ol className="text-muted-foreground space-y-0.5 text-sm list-none">
+                  <li>1. 안전방충망 견적</li>
+                  {state.completedQuotes.map((q, i) => (
+                    <li key={q.id}>{i + 2}. {q.productName} 견적</li>
+                  ))}
+                </ol>
+              )}
             </div>
 
             {(() => {
@@ -1797,11 +2186,13 @@ export default function QuoteCalculator() {
               const installInfo = installTypes.find(
                 (i) => i.id === state.installType
               );
-              const amountCashback = calculateAmountCashback(total);
-              const finalPrice = total - CARD_BENEFITS.firstDiscount - amountCashback;
-              // 월 요금 = 총 시공견적 / 24개월
+              const completedTotal = state.completedQuotes.reduce((s, q) => s + q.total, 0);
+              const grandTotal = completedTotal + total;
+              const effectiveTotal = state.completedQuotes.length > 0 ? grandTotal : total;
+              const amountCashback = calculateAmountCashback(effectiveTotal);
+              const finalPrice = effectiveTotal - CARD_BENEFITS.firstDiscount - amountCashback;
               const monthlyPayment = Math.round(
-                total / CARD_BENEFITS.installmentMonths
+                effectiveTotal / CARD_BENEFITS.installmentMonths
               );
               const monthlyWithCashback =
                 monthlyPayment - CARD_BENEFITS.monthlyCashback;
@@ -1814,69 +2205,88 @@ export default function QuoteCalculator() {
                   <Card>
                     <CardContent className="p-5 space-y-4">
                       <div className="text-center pb-4 border-b">
-                        <p className="text-sm text-muted-foreground mb-1">
-                          예상 견적 결과
-                        </p>
+                        <p className="text-sm text-muted-foreground mb-1">예상 견적 결과</p>
                         <p className="text-xs text-muted-foreground">
                           정확한 최종 견적은 방문 실측 후 확정됩니다. (예상 견적은 참고용)
                         </p>
                       </div>
 
+                      {/* 선택 내역 1: 현재 상품 (안전방충망) */}
                       <div className="space-y-3">
-                        <h4 className="font-bold text-sm">산출 요약</h4>
+                        <h4 className="font-bold text-sm">
+                          {state.completedQuotes.length > 0 ? '선택 내역 1 : 안전방충망' : '선택 내역'}
+                        </h4>
                         <div className="space-y-2 text-sm">
                           <div className="flex justify-between">
-                            <span className="text-muted-foreground">
-                              적용 브랜드
-                            </span>
-                            <span className="font-medium">
-                              {brandInfo?.name}
-                            </span>
+                            <span className="text-muted-foreground">적용 브랜드</span>
+                            <span className="font-medium">{brandInfo?.name}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-muted-foreground">
-                              설치유형
-                            </span>
+                            <span className="text-muted-foreground">설치유형</span>
                             <span className="font-medium">
                               {state.installType === 'lowFloor' ? '저층 / 방범 방충' : '고층 / 추락방지'} {state.meshType}
                             </span>
                           </div>
+                          <div className="pt-1 space-y-1">
+                            {items.map((item, index) => (
+                              <div key={index} className="flex justify-between pl-2">
+                                <span className="text-muted-foreground">· {item.spaceName} {item.detailIndex} ({item.width}×{item.height}mm)</span>
+                                <span>{item.unitPrice.toLocaleString()}원</span>
+                              </div>
+                            ))}
+                            {state.numberKeyCount > 0 && (
+                              <div className="flex justify-between pl-2">
+                                <span className="text-muted-foreground">· 번호키</span>
+                                <span>{NUMBER_KEY_PRICE.toLocaleString()}원×{state.numberKeyCount}개</span>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
-
-                      <div className="space-y-2 pt-3 border-t">
-                        {items.map((item, index) => (
-                          <div
-                            key={index}
-                            className="flex justify-between text-sm"
-                          >
-                            <span className="text-muted-foreground">
-                              {item.spaceName} {item.detailIndex} ({item.width}×{item.height}mm)
-                            </span>
-                            <span>
-                              {item.unitPrice.toLocaleString()}원
-                            </span>
-                          </div>
-                        ))}
-                        {state.numberKeyCount > 0 && (
-                          <div className="flex justify-between text-sm">
-                            <span className="text-muted-foreground">
-                              번호키
-                            </span>
-                            <span>
-                              {NUMBER_KEY_PRICE.toLocaleString()}원×
-                              {state.numberKeyCount}개
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
                       <div className="flex justify-between pt-3 border-t">
-                        <span className="font-bold">총 시공 견적</span>
-                        <span className="font-bold text-lg">
-                          {total.toLocaleString()}원
-                        </span>
+                        <span className="font-bold">{state.completedQuotes.length > 0 ? '안전방충망 소계' : '총 시공 견적'}</span>
+                        <span className="font-bold text-lg">{total.toLocaleString()}원</span>
                       </div>
+
+                      {/* 선택 내역 2, 3...: 완료된 상품들 */}
+                      {state.completedQuotes.map((q, i) => (
+                        <div key={q.id} className="space-y-3 pt-4 border-t">
+                          <h4 className="font-bold text-sm">선택 내역 {i + 2} : {q.productName}</h4>
+                          <div className="space-y-2 text-sm">
+                            {q.displayDetails.map((d, j) => (
+                              <div key={j} className={`flex justify-between ${d.indent ? 'pl-3' : ''}`}>
+                                <span className="text-muted-foreground">{d.label}</span>
+                                <span className="font-medium text-right">{d.value}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex justify-between pt-2 border-t">
+                            <span className="font-bold">{q.productName} 소계</span>
+                            <span className="font-bold">{q.total.toLocaleString()}원</span>
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* 합산 견적 내역 */}
+                      {state.completedQuotes.length > 0 && (
+                        <div className="p-3 bg-secondary/30 rounded-lg space-y-2 text-sm border-t pt-4">
+                          <p className="text-xs font-bold text-muted-foreground">합산 견적 내역</p>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">안전방충망 ({brandInfo?.name})</span>
+                            <span>{total.toLocaleString()}원</span>
+                          </div>
+                          {state.completedQuotes.map(q => (
+                            <div key={q.id} className="flex justify-between">
+                              <span className="text-muted-foreground">{q.label}</span>
+                              <span>{q.total.toLocaleString()}원</span>
+                            </div>
+                          ))}
+                          <div className="flex justify-between font-bold border-t pt-2">
+                            <span>합산 총액</span>
+                            <span>{grandTotal.toLocaleString()}원</span>
+                          </div>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
 
@@ -1895,7 +2305,7 @@ export default function QuoteCalculator() {
                         {amountCashback > 0 && (
                           <div className="flex justify-between">
                             <span className="text-muted-foreground">
-                              금액대별 캐시백 ({Math.floor(total / 1000000)}00만원 구간)
+                              금액대별 캐시백 ({getCashbackTierLabel(effectiveTotal)} 구간)
                             </span>
                             <span className="text-destructive font-medium">
                               -{amountCashback.toLocaleString()}원
@@ -1910,59 +2320,62 @@ export default function QuoteCalculator() {
                         </div>
                       </div>
 
-                      <div className="p-4 bg-background rounded-lg space-y-3">
-                        <div className="text-center">
-                          <p className="text-xs text-muted-foreground">
-                            {CARD_BENEFITS.installmentMonths}개월 무이자 할부 + 매월 30만원 사용시{" "}
-                            {CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백
-                          </p>
-                          <p className="text-[10px] text-muted-foreground/70">
-                            (사용 5대가전 수리비 연장보험 5만원 가입시 혜택)
-                          </p>
-                        </div>
-                        <div className="flex items-center justify-center gap-2 text-lg">
-                          <span>월</span>
-                          <span className="font-bold">
-                            {monthlyPayment.toLocaleString()}원
-                          </span>
-                          <span>-</span>
-                          <span className="text-destructive">
-                            {CARD_BENEFITS.monthlyCashback.toLocaleString()}원
-                          </span>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-sm text-muted-foreground">
-                            최종 월 부담금
-                          </p>
-                          <p className="text-2xl font-bold text-primary">
-                            {monthlyWithCashback.toLocaleString()}원
-                          </p>
-                        </div>
-                        <div className="pt-3 border-t">
-                          <div className="flex items-center justify-center gap-4">
-                            <div className="text-left">
-                              <p className="text-xs text-muted-foreground">
-                                이용조건 충족
-                              </p>
-                              <p className="text-lg font-bold text-foreground">
-                                최종혜택가
-                              </p>
-                            </div>
-                            <p className="text-3xl font-bold text-primary">
-                              {totalWithCashback.toLocaleString()}원
-                            </p>
-                          </div>
-                          <p className="text-xs text-muted-foreground text-center mt-1">
-                            (제휴카드혜택가 -{" "}
-                            {CARD_BENEFITS.monthlyCashback.toLocaleString()}원 ×{" "}
-                            {CARD_BENEFITS.installmentMonths}개월)
-                          </p>
+                      <div className="p-4 bg-background rounded-lg space-y-2">
+                        <p className="text-xs text-muted-foreground text-center">[이용조건 충족시]</p>
+                        <p className="text-sm text-center">
+                          매월 30만원 사용시 {CARD_BENEFITS.monthlyCashback.toLocaleString()}원 캐시백
+                        </p>
+                        <p className="text-sm text-center text-muted-foreground">
+                          ({CARD_BENEFITS.installmentMonths}개월) 총 : {(CARD_BENEFITS.monthlyCashback * CARD_BENEFITS.installmentMonths).toLocaleString()}원
+                        </p>
+                        <div className="pt-2 border-t text-center">
+                          <p className="text-sm text-muted-foreground">*이용조건 충족 최종혜택가</p>
+                          <p className="text-3xl font-bold text-primary">{totalWithCashback.toLocaleString()}원</p>
                         </div>
                       </div>
-
-
                     </CardContent>
                   </Card>
+
+                  {/* 다른 상품 추가 버튼 */}
+                  <Button
+                    className="w-full h-12 font-semibold"
+                    variant="outline"
+                    onClick={() => {
+                      const { items: addItems, total: t } = calculateTotal();
+                      let sectionText = `[안전방충망]\n`;
+                      sectionText += `브랜드: ${brandInfo?.name}\n`;
+                      sectionText += `설치유형: ${installInfo?.name} (${state.meshType})\n`;
+                      addItems.forEach((item) => {
+                        sectionText += `- ${item.spaceName} ${item.detailIndex} (${item.width}×${item.height}mm): ${item.unitPrice.toLocaleString()}원\n`;
+                      });
+                      if (state.numberKeyCount > 0) {
+                        sectionText += `- 번호키: ${NUMBER_KEY_PRICE.toLocaleString()}원 × ${state.numberKeyCount}개\n`;
+                      }
+                      sectionText += `소계: ${t.toLocaleString()}원`;
+                      const ssDisplayDetails: CompletedQuote['displayDetails'] = [
+                        { label: '적용 브랜드', value: brandInfo?.name ?? '' },
+                        { label: '설치유형', value: `${state.installType === 'lowFloor' ? '저층 / 방범 방충' : '고층 / 추락방지'} ${state.meshType}` },
+                        ...addItems.map(item => ({
+                          label: `· ${item.spaceName} ${item.detailIndex}`,
+                          value: `(${item.width}×${item.height}mm) ${item.unitPrice.toLocaleString()}원`,
+                          indent: true,
+                        })),
+                        ...(state.numberKeyCount > 0 ? [{ label: '· 번호키', value: `${NUMBER_KEY_PRICE.toLocaleString()}원 × ${state.numberKeyCount}개`, indent: true }] : []),
+                      ];
+                      addToCompletedQuotes({
+                        id: Date.now().toString(),
+                        label: `안전방충망 (${brandInfo?.name})`,
+                        productName: '안전방충망',
+                        total: t,
+                        sectionText,
+                        type: 'safetyScreen',
+                        displayDetails: ssDisplayDetails,
+                      });
+                    }}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    다른 상품 추가하기
+                  </Button>
 
                   <div className="flex gap-3">
                     <Button
@@ -1980,31 +2393,42 @@ export default function QuoteCalculator() {
                     <Button
                       variant="outline"
                       className="flex-1"
-                      onClick={shareKakao}
+                      onClick={captureQuote}
+                      disabled={capturing}
                     >
-                      <Share2 className="w-4 h-4 mr-2" />
-                      카톡 공유
+                      <Camera className="w-4 h-4 mr-2" />
+                      {capturing ? "캡처 중..." : "견적 캡처"}
                     </Button>
                   </div>
+
+                  {state.completedQuotes.some(q => q.type === 'glassRailing') && (
+                    <Card className="bg-primary/10 border-primary/30">
+                      <CardContent className="p-4">
+                        <h4 className="font-bold text-base mb-3 text-primary">유리난간 견적 포함사항</h4>
+                        <ul className="text-sm space-y-2">
+                          <li className="flex items-start gap-2">
+                            <Check className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                            <span className="font-medium">고구려 안전방충망(0.4mm) 설치 포함 (거실)</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <Check className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                            <span>고구려 안전방충망, 행위허가 대행비용, 입주민동의서 대행비용, 부가세가 모두 포함된 금액입니다.</span>
+                          </li>
+                        </ul>
+                      </CardContent>
+                    </Card>
+                  )}
 
                   <Card className="bg-secondary/50">
                     <CardContent className="p-4">
                       <h4 className="font-bold text-sm mb-2">안내 사항</h4>
                       <ul className="text-xs text-muted-foreground space-y-1">
-                        <li>• 최종 금액은 방문 실측 후 확정될 수 있습니다.</li>
-                        <li>
-                          • 특수 창호/사이즈는 별도 실측후 견적 가능(기본가격은 슬라이딩 도어)
-                        </li>
-                        <li>
-                          • 설치수량 2개 이하 / 지역에 따라서 추가 출장비 발생할수도 있습니다.
-                        </li>
-                        <li>
-                          • 모든 계산은 100mm(10cm) 단위 올림이 적용됩니다.
-                        </li>
-                        <li>
-                          • 캐시백 및 할인 혜택은 카드사 정책에 따라 변경될 수
-                          있습니다.
-                        </li>
+                        {Array.from(new Set([
+                          ...state.completedQuotes.flatMap(q => PRODUCT_NOTICES[q.type]),
+                          ...PRODUCT_NOTICES['safetyScreen'],
+                        ])).map((notice, i) => (
+                          <li key={i}>• {notice}</li>
+                        ))}
                       </ul>
                     </CardContent>
                   </Card>
@@ -2012,7 +2436,7 @@ export default function QuoteCalculator() {
                   <div className="flex gap-3">
                     <Button
                       variant="outline"
-                      onClick={() => goToStep(1)}
+                      onClick={resetAll}
                       className="flex-1"
                     >
                       처음으로
@@ -2033,8 +2457,8 @@ export default function QuoteCalculator() {
         )}
       </main>
 
-      {/* 푸터 - 결제페이지(step 6 또는 유리난간 step 3)에서만 표시 */}
-      {(state.step === 6 || (state.step === 3 && state.quoteType === 'glassRailing')) && (
+      {/* 푸터 - 결제페이지(step 6, 유리난간 step 3, 후퍼옵틱 step 3)에서만 표시 */}
+      {(state.step === 6 || (state.step === 3 && (state.quoteType === 'glassRailing' || state.quoteType === 'huperOptik'))) && (
         <footer className="border-t mt-12 py-6">
           <div className="max-w-lg mx-auto px-4">
             <div className="flex items-center justify-between">

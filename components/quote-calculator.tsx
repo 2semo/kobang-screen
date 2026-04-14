@@ -30,6 +30,11 @@ import {
   glassRailingPurchaseOptions,
   glassRailingTypeOptions,
   glassRailingWindowCountOptions,
+  glassRailingWindowSizeOptions,
+  getSteelRoomAddPrice,
+  steelRoomAddOptions,
+  getWindowRoomAddPrice,
+  windowRoomAddOptions,
   getHuperOptikPrice,
   huperOptikPurchaseOptions,
   huperOptikSizeOptions,
@@ -43,6 +48,9 @@ import {
   type GlassRailingPurchaseType,
   type GlassRailingType,
   type GlassRailingWindowCount,
+  type GlassRailingWindowSize,
+  type SteelRoomAddSize,
+  type WindowRoomAddSize,
   type HuperOptikPurchaseType,
   type HuperOptikFilmType,
   type HuperOptikSizeType,
@@ -112,6 +120,9 @@ interface QuoteState {
   glassRailingPurchaseType: GlassRailingPurchaseType | null;
   glassRailingType: GlassRailingType | null;
   glassRailingWindowCount: GlassRailingWindowCount | null;
+  glassRailingWindowSize: GlassRailingWindowSize | null; // 입면분할 대창 사이즈
+  glassRailingSteelRoomAddSize: SteelRoomAddSize | null; // 철제난간 방추가
+  glassRailingWindowRoomAddSize: WindowRoomAddSize | null; // 입면분할 방추가
   // 후퍼옵틱 관련
   huperOptikPurchaseType: HuperOptikPurchaseType | null;
   huperOptikFilmType: HuperOptikFilmType | null;
@@ -133,6 +144,9 @@ const initialState: QuoteState = {
   glassRailingPurchaseType: null,
   glassRailingType: null,
   glassRailingWindowCount: null,
+  glassRailingWindowSize: null,
+  glassRailingSteelRoomAddSize: null,
+  glassRailingWindowRoomAddSize: null,
   // 후퍼옵틱 관련
   huperOptikPurchaseType: null,
   huperOptikFilmType: null,
@@ -853,6 +867,91 @@ export default function QuoteCalculator() {
               </div>
             </div>
 
+            {/* 대창 사이즈 선택 (입면분할 전용) */}
+            {state.glassRailingType === 'windowRemoval' && (
+              <div className="space-y-3">
+                <h3 className="font-bold">대창 사이즈 선택</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  {glassRailingWindowSizeOptions.map((option) => (
+                    <Card
+                      key={option.id}
+                      className={`cursor-pointer transition-all ${
+                        state.glassRailingWindowSize === option.id
+                          ? "ring-2 ring-primary border-primary"
+                          : "hover:border-primary/50"
+                      }`}
+                      onClick={() => updateState({ glassRailingWindowSize: option.id })}
+                    >
+                      <CardContent className="p-4 text-center">
+                        <h4 className="font-bold text-sm">{option.name}</h4>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {option.description}
+                        </p>
+                        {state.glassRailingWindowSize === option.id && (
+                          <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center mx-auto mt-2">
+                            <Check className="w-4 h-4 text-primary-foreground" />
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 방추가 선택 (선택사항) */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold">방추가 시공 <span className="text-sm font-normal text-muted-foreground">(선택사항)</span></h3>
+              </div>
+              <div className="space-y-2">
+                {(state.glassRailingType === 'steelRemoval' ? steelRoomAddOptions : windowRoomAddOptions).map((option) => {
+                  const currentSize = state.glassRailingType === 'steelRemoval'
+                    ? state.glassRailingSteelRoomAddSize
+                    : state.glassRailingWindowRoomAddSize;
+                  const isSelected = currentSize === option.id;
+                  return (
+                    <Card
+                      key={option.id}
+                      className={`cursor-pointer transition-all ${
+                        isSelected ? "ring-2 ring-primary border-primary" : "hover:border-primary/50"
+                      }`}
+                      onClick={() => {
+                        if (isSelected) {
+                          // 다시 누르면 선택 해제
+                          updateState(
+                            state.glassRailingType === 'steelRemoval'
+                              ? { glassRailingSteelRoomAddSize: null }
+                              : { glassRailingWindowRoomAddSize: null }
+                          );
+                        } else {
+                          updateState(
+                            state.glassRailingType === 'steelRemoval'
+                              ? { glassRailingSteelRoomAddSize: option.id as SteelRoomAddSize }
+                              : { glassRailingWindowRoomAddSize: option.id as WindowRoomAddSize }
+                          );
+                        }
+                      }}
+                    >
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="font-bold text-sm">{option.name}</h4>
+                            <p className="text-xs text-muted-foreground mt-0.5">{option.description}</p>
+                          </div>
+                          {isSelected && (
+                            <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
+                              <Check className="w-4 h-4 text-primary-foreground" />
+                            </div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="flex gap-3 pt-4">
               <Button variant="outline" onClick={prevStep} className="flex-1">
                 <ChevronLeft className="w-4 h-4 mr-1" />
@@ -860,7 +959,12 @@ export default function QuoteCalculator() {
               </Button>
               <Button
                 onClick={() => goToStep(3)}
-                disabled={!state.glassRailingPurchaseType || !state.glassRailingType || !state.glassRailingWindowCount}
+                disabled={
+                  !state.glassRailingPurchaseType ||
+                  !state.glassRailingType ||
+                  !state.glassRailingWindowCount ||
+                  (state.glassRailingType === 'windowRemoval' && !state.glassRailingWindowSize)
+                }
                 className="flex-1"
               >
                 견적 확인
@@ -1085,15 +1189,30 @@ export default function QuoteCalculator() {
             </div>
 
             {(() => {
-              const total = state.glassRailingPurchaseType && state.glassRailingType && state.glassRailingWindowCount
-                ? getGlassRailingPrice(state.glassRailingPurchaseType, state.glassRailingType, state.glassRailingWindowCount)
+              const basePrice = state.glassRailingPurchaseType && state.glassRailingType && state.glassRailingWindowCount
+                ? getGlassRailingPrice(
+                    state.glassRailingPurchaseType,
+                    state.glassRailingType,
+                    state.glassRailingWindowCount,
+                    state.glassRailingWindowSize ?? undefined
+                  )
                 : 0;
+              const roomAddPrice =
+                state.glassRailingType === 'steelRemoval' && state.glassRailingSteelRoomAddSize
+                  ? getSteelRoomAddPrice(state.glassRailingSteelRoomAddSize)
+                  : state.glassRailingType === 'windowRemoval' && state.glassRailingWindowRoomAddSize
+                  ? getWindowRoomAddPrice(state.glassRailingWindowRoomAddSize)
+                  : 0;
+              const total = basePrice + roomAddPrice;
               const completedTotal = state.completedQuotes.reduce((s, q) => s + q.total, 0);
               const grandTotal = completedTotal + total;
 
               const purchaseTypeInfo = glassRailingPurchaseOptions.find(o => o.id === state.glassRailingPurchaseType);
               const railingTypeInfo = glassRailingTypeOptions.find(o => o.id === state.glassRailingType);
               const windowCountInfo = glassRailingWindowCountOptions.find(o => o.id === state.glassRailingWindowCount);
+              const windowSizeInfo = glassRailingWindowSizeOptions.find(o => o.id === state.glassRailingWindowSize);
+              const steelRoomAddInfo = steelRoomAddOptions.find(o => o.id === state.glassRailingSteelRoomAddSize);
+              const windowRoomAddInfo = windowRoomAddOptions.find(o => o.id === state.glassRailingWindowRoomAddSize);
 
               return (
                 <>
@@ -1126,6 +1245,24 @@ export default function QuoteCalculator() {
                             <span className="text-muted-foreground">거실창수</span>
                             <span className="font-medium">{windowCountInfo?.name}</span>
                           </div>
+                          {windowSizeInfo && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">대창 사이즈</span>
+                              <span className="font-medium">{windowSizeInfo.name}</span>
+                            </div>
+                          )}
+                          {(steelRoomAddInfo || windowRoomAddInfo) && (
+                            <>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">거실 시공비</span>
+                                <span className="font-medium">{basePrice.toLocaleString()}원</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">방추가 ({(steelRoomAddInfo ?? windowRoomAddInfo)?.name})</span>
+                                <span className="font-medium">+{roomAddPrice.toLocaleString()}원</span>
+                              </div>
+                            </>
+                          )}
                         </div>
                         <div className="flex justify-between pt-2 border-t text-sm">
                           <span className="font-semibold">아파트 유리난간 소계</span>
@@ -1251,12 +1388,22 @@ export default function QuoteCalculator() {
                     className="w-full h-12 font-semibold"
                     variant="outline"
                     onClick={() => {
-                      const sectionText =
+                      const roomAddInfo = steelRoomAddInfo ?? windowRoomAddInfo;
+                      let sectionText =
                         `[고구려 파노라마 유리난간]\n` +
                         `구매방식: ${purchaseTypeInfo?.name}\n` +
                         `타입: ${railingTypeInfo?.name}\n` +
-                        `거실창수: ${windowCountInfo?.name}\n` +
-                        `소계: ${total.toLocaleString()}원`;
+                        `거실창수: ${windowCountInfo?.name}\n`;
+                      if (windowSizeInfo) sectionText += `대창 사이즈: ${windowSizeInfo.name}\n`;
+                      if (roomAddInfo) sectionText += `방추가: ${roomAddInfo.name} (+${roomAddPrice.toLocaleString()}원)\n`;
+                      sectionText += `소계: ${total.toLocaleString()}원`;
+                      const displayDetails: { label: string; value: string }[] = [
+                        { label: '구매방식', value: purchaseTypeInfo?.name ?? '' },
+                        { label: '타입', value: railingTypeInfo?.name ?? '' },
+                        { label: '거실창수', value: windowCountInfo?.name ?? '' },
+                      ];
+                      if (windowSizeInfo) displayDetails.push({ label: '대창 사이즈', value: windowSizeInfo.name });
+                      if (roomAddInfo) displayDetails.push({ label: '방추가', value: `${roomAddInfo.name} (+${roomAddPrice.toLocaleString()}원)` });
                       addToCompletedQuotes({
                         id: Date.now().toString(),
                         label: `아파트 유리난간 (${purchaseTypeInfo?.name})`,
@@ -1264,11 +1411,7 @@ export default function QuoteCalculator() {
                         total,
                         sectionText,
                         type: 'glassRailing',
-                        displayDetails: [
-                          { label: '구매방식', value: purchaseTypeInfo?.name ?? '' },
-                          { label: '타입', value: railingTypeInfo?.name ?? '' },
-                          { label: '거실창수', value: windowCountInfo?.name ?? '' },
-                        ],
+                        displayDetails,
                       });
                     }}
                   >
@@ -1284,12 +1427,17 @@ export default function QuoteCalculator() {
                         const purchaseTypeInfo = glassRailingPurchaseOptions.find(o => o.id === state.glassRailingPurchaseType);
                         const railingTypeInfo = glassRailingTypeOptions.find(o => o.id === state.glassRailingType);
                         const windowCountInfo = glassRailingWindowCountOptions.find(o => o.id === state.glassRailingWindowCount);
-                        
+                        const windowSizeInfoShare = glassRailingWindowSizeOptions.find(o => o.id === state.glassRailingWindowSize);
+                        const roomAddInfoShare = steelRoomAddOptions.find(o => o.id === state.glassRailingSteelRoomAddSize)
+                          ?? windowRoomAddOptions.find(o => o.id === state.glassRailingWindowRoomAddSize);
+
                         let text = state.completedQuotes.length > 0 ? `[합산 견적서]\n\n` : `[고구려 파노라마 유리난간 견적서]\n\n`;
                         text += `[고구려 파노라마 유리난간]\n`;
                         text += `구매방식: ${purchaseTypeInfo?.name}\n`;
                         text += `타입: ${railingTypeInfo?.name}\n`;
                         text += `거실창수: ${windowCountInfo?.name}\n`;
+                        if (windowSizeInfoShare) text += `대창 사이즈: ${windowSizeInfoShare.name}\n`;
+                        if (roomAddInfoShare) text += `방추가: ${roomAddInfoShare.name} (+${roomAddPrice.toLocaleString()}원)\n`;
                         if (state.completedQuotes.length > 0) {
                           text += `소계: ${total.toLocaleString()}원\n`;
                           text += `\n`;

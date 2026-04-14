@@ -411,37 +411,50 @@ export function getRecommendedMeshType(brand: BrandType, installType: InstallTyp
 export type GlassRailingPurchaseType = 'group' | 'general'; // 공동구매 / 일반
 export type GlassRailingType = 'steelRemoval' | 'windowRemoval'; // 철제난간 철거 / 입면분할창 철거
 export type GlassRailingWindowCount = '3w' | '2w';
+export type GlassRailingWindowSize = 'large1700up' | 'large1700down'; // 대창 1700이상 / 1700미만 (입면분할용)
 
 export interface GlassRailingPriceInfo {
   purchaseType: GlassRailingPurchaseType;
   railingType: GlassRailingType;
   windowCount: GlassRailingWindowCount;
+  windowSize?: GlassRailingWindowSize; // 입면분할창 전용
   price: number;
 }
 
 // 유리난간 가격표
 export const glassRailingPrices: GlassRailingPriceInfo[] = [
-  // 철제난간 철거 후 유리난간 설치
+  // 철제난간 철거 후 유리난간 설치 (거실)
   { purchaseType: 'general', railingType: 'steelRemoval', windowCount: '3w', price: 4000000 },
   { purchaseType: 'general', railingType: 'steelRemoval', windowCount: '2w', price: 3700000 },
   { purchaseType: 'group', railingType: 'steelRemoval', windowCount: '3w', price: 3000000 },
-  { purchaseType: 'group', railingType: 'steelRemoval', windowCount: '2w', price: 2700000 },
-  
-  // 입면분할창 철거 후 유리난간 설치
-  { purchaseType: 'general', railingType: 'windowRemoval', windowCount: '3w', price: 6300000 },
-  { purchaseType: 'general', railingType: 'windowRemoval', windowCount: '2w', price: 5700000 },
-  { purchaseType: 'group', railingType: 'windowRemoval', windowCount: '3w', price: 4800000 },
-  { purchaseType: 'group', railingType: 'windowRemoval', windowCount: '2w', price: 4200000 },
+  { purchaseType: 'group', railingType: 'steelRemoval', windowCount: '2w', price: 2800000 },
+
+  // 입면분할창 철거 후 유리난간 설치 - 대창 1700이상
+  { purchaseType: 'general', railingType: 'windowRemoval', windowCount: '3w', windowSize: 'large1700up', price: 6200000 },
+  { purchaseType: 'general', railingType: 'windowRemoval', windowCount: '2w', windowSize: 'large1700up', price: 5700000 },
+  { purchaseType: 'group', railingType: 'windowRemoval', windowCount: '3w', windowSize: 'large1700up', price: 5700000 },
+  { purchaseType: 'group', railingType: 'windowRemoval', windowCount: '2w', windowSize: 'large1700up', price: 5200000 },
+
+  // 입면분할창 철거 후 유리난간 설치 - 대창 1700미만
+  { purchaseType: 'general', railingType: 'windowRemoval', windowCount: '3w', windowSize: 'large1700down', price: 5700000 },
+  { purchaseType: 'general', railingType: 'windowRemoval', windowCount: '2w', windowSize: 'large1700down', price: 5200000 },
+  { purchaseType: 'group', railingType: 'windowRemoval', windowCount: '3w', windowSize: 'large1700down', price: 5100000 },
+  { purchaseType: 'group', railingType: 'windowRemoval', windowCount: '2w', windowSize: 'large1700down', price: 4900000 },
 ];
 
 // 유리난간 가격 조회 함수
 export function getGlassRailingPrice(
   purchaseType: GlassRailingPurchaseType,
   railingType: GlassRailingType,
-  windowCount: GlassRailingWindowCount
+  windowCount: GlassRailingWindowCount,
+  windowSize?: GlassRailingWindowSize
 ): number {
   const priceInfo = glassRailingPrices.find(
-    (p) => p.purchaseType === purchaseType && p.railingType === railingType && p.windowCount === windowCount
+    (p) =>
+      p.purchaseType === purchaseType &&
+      p.railingType === railingType &&
+      p.windowCount === windowCount &&
+      (railingType === 'windowRemoval' ? p.windowSize === windowSize : true)
   );
   return priceInfo?.price || 0;
 }
@@ -488,6 +501,68 @@ export const glassRailingWindowCountOptions = [
     name: '2W',
     description: '거실창 2연동',
   },
+];
+
+// 대창 사이즈 옵션 (입면분할용)
+export const glassRailingWindowSizeOptions = [
+  {
+    id: 'large1700up' as GlassRailingWindowSize,
+    name: '대창 1700 이상',
+    description: '대창 높이 1700mm 이상',
+  },
+  {
+    id: 'large1700down' as GlassRailingWindowSize,
+    name: '대창 1700 미만',
+    description: '대창 높이 1700mm 미만',
+  },
+];
+
+// ==================== 유리난간 방추가 가격 데이터 ====================
+
+// 철제난간 방추가 사이즈
+export type SteelRoomAddSize = '2w_1500down' | '2w_1800down' | '2w_2500down' | '2w_2500up' | '3w';
+
+export const steelRoomAddPrices: Record<SteelRoomAddSize, number> = {
+  '2w_1500down': 1400000,
+  '2w_1800down': 1800000,
+  '2w_2500down': 2100000,
+  '2w_2500up':   2300000,
+  '3w':          2400000,
+};
+
+export function getSteelRoomAddPrice(size: SteelRoomAddSize): number {
+  return steelRoomAddPrices[size] || 0;
+}
+
+export const steelRoomAddOptions = [
+  { id: '2w_1500down' as SteelRoomAddSize, name: '2W (폭 1,500미만)', description: '방 거실창 2연동, 폭 1,500mm 미만' },
+  { id: '2w_1800down' as SteelRoomAddSize, name: '2W (폭 1,800미만)', description: '방 거실창 2연동, 폭 1,800mm 미만' },
+  { id: '2w_2500down' as SteelRoomAddSize, name: '2W (폭 2,500미만)', description: '방 거실창 2연동, 폭 2,500mm 미만' },
+  { id: '2w_2500up'   as SteelRoomAddSize, name: '2W (폭 2,500이상)', description: '방 거실창 2연동, 폭 2,500mm 이상' },
+  { id: '3w'          as SteelRoomAddSize, name: '3W',                description: '방 거실창 3연동' },
+];
+
+// 입면분할 방추가 사이즈
+export type WindowRoomAddSize = '2w_1800down' | '2w_1800up' | '2w_2500up' | '2w_3600up' | '3w';
+
+export const windowRoomAddPrices: Record<WindowRoomAddSize, number> = {
+  '2w_1800down': 2700000,
+  '2w_1800up':   2900000,
+  '2w_2500up':   3400000,
+  '2w_3600up':   4500000,
+  '3w':          4500000,
+};
+
+export function getWindowRoomAddPrice(size: WindowRoomAddSize): number {
+  return windowRoomAddPrices[size] || 0;
+}
+
+export const windowRoomAddOptions = [
+  { id: '2w_1800down' as WindowRoomAddSize, name: '2W (폭 1,800미만)', description: '방 거실창 2연동, 폭 1,800mm 미만' },
+  { id: '2w_1800up'   as WindowRoomAddSize, name: '2W (폭 1,800이상)', description: '방 거실창 2연동, 폭 1,800mm 이상' },
+  { id: '2w_2500up'   as WindowRoomAddSize, name: '2W (폭 2,500이상)', description: '방 거실창 2연동, 폭 2,500mm 이상' },
+  { id: '2w_3600up'   as WindowRoomAddSize, name: '2W (폭 3,600이상)', description: '방 거실창 2연동, 폭 3,600mm 이상' },
+  { id: '3w'          as WindowRoomAddSize, name: '3W',                description: '방 거실창 3연동' },
 ];
 
 // ==================== 후퍼옵틱 열차단필름 가격 데이터 ====================

@@ -688,10 +688,22 @@ export default function QuoteCalculator() {
               )}
               <Button
                 onClick={() => {
-                  updateState({ quoteType: 'safetyScreen' });
+                  updateState({ quoteType: 'blackScreenMesh' });
                   nextStep();
                 }}
                 className="w-full h-14 text-lg font-semibold"
+                size="lg"
+              >
+                블랙스텐 방충망 교체 견적받기
+                <ArrowRight className="w-5 h-5 ml-2" />
+              </Button>
+              <Button
+                onClick={() => {
+                  updateState({ quoteType: 'safetyScreen' });
+                  nextStep();
+                }}
+                variant="outline"
+                className="w-full h-14 text-lg font-semibold border-primary text-primary hover:bg-primary hover:text-primary-foreground"
                 size="lg"
               >
                 안전방충망 견적받기
@@ -719,18 +731,6 @@ export default function QuoteCalculator() {
                 size="lg"
               >
                 후퍼옵틱 필름 견적받기
-                <ArrowRight className="w-5 h-5 ml-2" />
-              </Button>
-              <Button
-                onClick={() => {
-                  updateState({ quoteType: 'blackScreenMesh' });
-                  nextStep();
-                }}
-                variant="outline"
-                className="w-full h-14 text-lg font-semibold border-primary text-primary hover:bg-primary hover:text-primary-foreground"
-                size="lg"
-              >
-                블랙스텐 방충망 교체 견적받기
                 <ArrowRight className="w-5 h-5 ml-2" />
               </Button>
             </div>

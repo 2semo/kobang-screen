@@ -732,3 +732,92 @@ export const huperOptikFilmOptions = [
     model: 'HC70',
   },
 ];
+
+// ==================== 블랙스텐 미세촘촘 방충망 가격 데이터 ====================
+
+export type BlackScreenServiceType = 'meshOnly' | 'frameAndMesh' | 'rollScreen';
+
+export interface BlackScreenUnitPrice {
+  serviceType: 'meshOnly' | 'frameAndMesh';
+  quantityTier: 'low' | 'high';
+  large: number;
+  medium: number;
+  largeCode: string;
+  mediumCode: string;
+}
+
+// 블랙스텐망 교체: 3-5장=low / 6장이상=high
+// 틀제작+망 교체: 1-5장=low / 6장이상=high
+export const blackScreenUnitPrices: BlackScreenUnitPrice[] = [
+  { serviceType: 'meshOnly',     quantityTier: 'low',  large: 90000,  medium: 70000,  largeCode: 'INS-CH-SCREEN(24)(B)',    mediumCode: 'INS-CH-SCREEN(24)(M)'    },
+  { serviceType: 'meshOnly',     quantityTier: 'high', large: 85000,  medium: 65000,  largeCode: 'INS-CH-SCREEN(24)(B)(G)', mediumCode: 'INS-CH-SCREEN(24)(M)(G)' },
+  { serviceType: 'frameAndMesh', quantityTier: 'low',  large: 180000, medium: 150000, largeCode: 'INS-MCH-SCREEN(24)(B)',   mediumCode: 'INS-MCH-SCREEN(24)(M)'   },
+  { serviceType: 'frameAndMesh', quantityTier: 'high', large: 160000, medium: 130000, largeCode: 'INS-MCH-SCREEN(24)(B)(G)',mediumCode: 'INS-MCH-SCREEN(24)(M)(G)'},
+];
+
+export function getBlackScreenPrice(
+  serviceType: 'meshOnly' | 'frameAndMesh',
+  largeCount: number,
+  mediumCount: number
+): { largeUnitPrice: number; mediumUnitPrice: number; total: number; largeCode: string; mediumCode: string } {
+  const totalCount = largeCount + mediumCount;
+  const tier: 'low' | 'high' = totalCount >= 6 ? 'high' : 'low';
+  const priceInfo = blackScreenUnitPrices.find(
+    (p) => p.serviceType === serviceType && p.quantityTier === tier
+  )!;
+  return {
+    largeUnitPrice: priceInfo.large,
+    mediumUnitPrice: priceInfo.medium,
+    total: largeCount * priceInfo.large + mediumCount * priceInfo.medium,
+    largeCode: priceInfo.largeCode,
+    mediumCode: priceInfo.mediumCode,
+  };
+}
+
+export function getRollScreenPrice(count: number): { unitPrice: number; total: number; code: string } {
+  const isHigh = count >= 6;
+  return {
+    unitPrice: isHigh ? 120000 : 150000,
+    total: count * (isHigh ? 120000 : 150000),
+    code: isHigh ? 'INS-CH-SCREEN(ROLL)(G)' : 'INS-CH-SCREEN(ROLL)',
+  };
+}
+
+export const BLACK_SCREEN_MIN_PRICE = 200000;
+
+export const blackScreenServiceOptions = [
+  {
+    id: 'meshOnly' as BlackScreenServiceType,
+    name: '블랙스텐망 교체',
+    subtitle: '한국메탈 블랙 0.18*24메쉬',
+    description: '기존 틀에 블랙스텐 미세촘촘 망만 교체\n포함: 망교체·모헤어·가스켓·물구멍스티커·롤러',
+    as: '망불량 10년 / 시공불량 1년',
+    priceTierLow: '3-5장',
+    priceTierHigh: '6장 이상',
+  },
+  {
+    id: 'frameAndMesh' as BlackScreenServiceType,
+    name: '틀제작 + 블랙스텐망 교체',
+    subtitle: 'PVC(KCC·영림·한화) / 알루미늄(청송·대신)',
+    description: '새 틀 제작 후 블랙스텐 미세촘촘 망 설치\n포함: 망교체·모헤어·가스켓·물구멍스티커·롤러',
+    as: '10년',
+    priceTierLow: '1-5장',
+    priceTierHigh: '6장 이상',
+  },
+  {
+    id: 'rollScreen' as BlackScreenServiceType,
+    name: '롤방충망',
+    subtitle: '대신 알루텍 / 1000×1000mm 이내',
+    description: '롤방충망 설치 · 무상철거 포함 (설치대수 동일수량)\n외부설치 시 장당 1만원 추가 / 10장이상 대량 작업은 별도 견적',
+    as: '1년',
+    priceTierLow: '1-5장',
+    priceTierHigh: '6장 이상',
+  },
+];
+
+export const BLACK_SCREEN_FEATURES = [
+  { title: '벌레 완벽 차단', description: '초파리·날파리까지 차단 (일반망 대비 우수)' },
+  { title: '반영구 내구성', description: '스테인리스 소재 → 녹 없음, 찢어짐 거의 없음' },
+  { title: '시야 깨끗', description: '블랙망 → 반사 적고 선명한 시야' },
+  { title: '통풍 유지', description: '촘촘하지만 바람은 충분히 통과' },
+];

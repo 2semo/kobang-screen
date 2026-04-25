@@ -41,6 +41,11 @@ import {
   huperOptikFilmOptions,
   huperOptikRoomPrices,
   HUPER_OPTIK_MIN_GENERAL_PRICE,
+  blackScreenServiceOptions,
+  getBlackScreenPrice,
+  getRollScreenPrice,
+  BLACK_SCREEN_MIN_PRICE,
+  BLACK_SCREEN_FEATURES,
   type BrandType,
   type MeshType,
   type InstallType,
@@ -55,6 +60,7 @@ import {
   type HuperOptikFilmType,
   type HuperOptikSizeType,
   type HuperOptikRoomId,
+  type BlackScreenServiceType,
 } from "@/lib/pricing-data";
 
 interface SpaceItemDetail {
@@ -71,8 +77,8 @@ interface SpaceItem {
   showSizeInput?: boolean;
 }
 
-// 견적 유형: 안전방충망, 유리난간, 후퍼옵틱
-type QuoteType = 'safetyScreen' | 'glassRailing' | 'huperOptik';
+// 견적 유형: 안전방충망, 유리난간, 후퍼옵틱, 블랙스텐 방충망
+type QuoteType = 'safetyScreen' | 'glassRailing' | 'huperOptik' | 'blackScreenMesh';
 
 // 저장된 완료 견적
 interface CompletedQuote {
@@ -104,6 +110,13 @@ const PRODUCT_NOTICES: Record<QuoteType, string[]> = {
     '단, 주상복합이나 이면창이 있는경우 추가요금이 발생할 수 있습니다.',
     '전용 84초과 타입은 실측을 통한 견적이 가능합니다.',
   ],
+  blackScreenMesh: [
+    '최종 금액은 방문 실측 후 확정될 수 있습니다.',
+    '서울·경기 지역만 시공 가능합니다.',
+    '최소 시공가 20만원 이상만 가능합니다.',
+    '특대창·특수창·실외기·방범창제거·설치난이도에 따라 별도 건적이 발생할 수 있습니다.',
+    '이건창호는 제외됩니다.',
+  ],
 };
 
 interface QuoteState {
@@ -128,6 +141,11 @@ interface QuoteState {
   huperOptikFilmType: HuperOptikFilmType | null;
   huperOptikSizeType: HuperOptikSizeType | null;
   huperOptikSelectedRooms: HuperOptikRoomId[];
+  // 블랙스텐 방충망 관련
+  blackScreenServiceType: BlackScreenServiceType | null;
+  blackScreenLargeCount: number;
+  blackScreenMediumCount: number;
+  blackScreenRollCount: number;
 }
 
 const initialState: QuoteState = {
@@ -152,6 +170,11 @@ const initialState: QuoteState = {
   huperOptikFilmType: null,
   huperOptikSizeType: null,
   huperOptikSelectedRooms: [],
+  // 블랙스텐 방충망 관련
+  blackScreenServiceType: null,
+  blackScreenLargeCount: 0,
+  blackScreenMediumCount: 0,
+  blackScreenRollCount: 0,
 };
 
 // 브랜드별, 설치유형별 사용 가능한 망타입
@@ -594,6 +617,19 @@ export default function QuoteCalculator() {
           </div>
         )}
 
+        {/* 진행 상태 - 블랙스텐 방충망 */}
+        {state.step === 2 && state.quoteType === 'blackScreenMesh' && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm text-muted-foreground">단계 1/2</span>
+              <span className="text-sm font-medium text-primary">50%</span>
+            </div>
+            <div className="h-2 bg-secondary rounded-full overflow-hidden">
+              <div className="h-full bg-primary transition-all duration-300" style={{ width: '50%' }} />
+            </div>
+          </div>
+        )}
+
         {/* Step 1: 인트로 - 견적 유형 선택 */}
         {state.step === 1 && (
           <div className="space-y-6 py-4">
@@ -683,6 +719,18 @@ export default function QuoteCalculator() {
                 size="lg"
               >
                 후퍼옵틱 필름 견적받기
+                <ArrowRight className="w-5 h-5 ml-2" />
+              </Button>
+              <Button
+                onClick={() => {
+                  updateState({ quoteType: 'blackScreenMesh' });
+                  nextStep();
+                }}
+                variant="outline"
+                className="w-full h-14 text-lg font-semibold border-primary text-primary hover:bg-primary hover:text-primary-foreground"
+                size="lg"
+              >
+                블랙스텐 방충망 교체 견적받기
                 <ArrowRight className="w-5 h-5 ml-2" />
               </Button>
             </div>
@@ -1162,6 +1210,215 @@ export default function QuoteCalculator() {
                       .reduce((sum, r) => sum + r.prices[state.huperOptikSizeType!][state.huperOptikFilmType!], 0) < HUPER_OPTIK_MIN_GENERAL_PRICE
                   ))
                 }
+                className="flex-1"
+              >
+                견적 확인
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 2: 블랙스텐 방충망 - 서비스 선택 + 수량 입력 */}
+        {state.step === 2 && state.quoteType === 'blackScreenMesh' && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl font-bold mb-2">블랙스텐 미세촘촘 방충망 견적</h2>
+              <p className="text-muted-foreground">서비스 종류를 선택하고 수량을 입력해주세요</p>
+            </div>
+
+            {/* 서비스 타입 선택 */}
+            <div className="space-y-3">
+              <h3 className="font-bold">서비스 종류</h3>
+              <div className="space-y-3">
+                {blackScreenServiceOptions.map((option) => (
+                  <Card
+                    key={option.id}
+                    className={`cursor-pointer transition-all ${
+                      state.blackScreenServiceType === option.id
+                        ? 'ring-2 ring-primary border-primary'
+                        : 'hover:border-primary/50'
+                    }`}
+                    onClick={() =>
+                      updateState({
+                        blackScreenServiceType: option.id,
+                        blackScreenLargeCount: 0,
+                        blackScreenMediumCount: 0,
+                        blackScreenRollCount: 0,
+                      })
+                    }
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 pr-2">
+                          <h4 className="font-bold">{option.name}</h4>
+                          <Badge variant="outline" className="mt-1 text-xs">{option.subtitle}</Badge>
+                          <p className="text-sm text-muted-foreground mt-1 whitespace-pre-line">{option.description}</p>
+                          <p className="text-xs text-muted-foreground mt-1">AS: {option.as}</p>
+                        </div>
+                        {state.blackScreenServiceType === option.id && (
+                          <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
+                            <Check className="w-4 h-4 text-primary-foreground" />
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </div>
+
+            {/* 수량 입력 - 블랙스텐망 교체 / 틀제작+망 교체 */}
+            {(state.blackScreenServiceType === 'meshOnly' || state.blackScreenServiceType === 'frameAndMesh') && (() => {
+              const svc = state.blackScreenServiceType;
+              const priceInfo = getBlackScreenPrice(svc, state.blackScreenLargeCount, state.blackScreenMediumCount);
+              const totalCount = state.blackScreenLargeCount + state.blackScreenMediumCount;
+              const tierLabel = totalCount >= 6 ? '6장 이상 단가' : (svc === 'meshOnly' ? '3-5장 단가' : '1-5장 단가');
+              const belowMin = priceInfo.total > 0 && priceInfo.total < BLACK_SCREEN_MIN_PRICE;
+
+              return (
+                <div className="space-y-4 pt-2 border-t">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold">수량 선택</h3>
+                    {totalCount > 0 && (
+                      <Badge variant="secondary" className="text-xs">{tierLabel} 적용</Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground -mt-2">대형(높이 1600mm 이상)과 중형(높이 1600mm 미만)을 혼합 선택 가능</p>
+
+                  {/* 대형 카운터 */}
+                  <div className="flex items-center justify-between p-4 bg-secondary/30 rounded-xl">
+                    <div>
+                      <p className="font-bold text-sm">대형 <span className="font-normal text-muted-foreground">(높이 1600mm 이상)</span></p>
+                      {totalCount > 0 && (
+                        <p className="text-xs text-primary mt-0.5">{priceInfo.largeUnitPrice.toLocaleString()}원/장</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => updateState({ blackScreenLargeCount: Math.max(0, state.blackScreenLargeCount - 1) })}
+                        className="w-9 h-9 rounded-full border-2 border-primary flex items-center justify-center hover:bg-primary hover:text-primary-foreground transition-colors disabled:opacity-40"
+                        disabled={state.blackScreenLargeCount === 0}
+                      >
+                        <Minus className="w-4 h-4" />
+                      </button>
+                      <span className="w-8 text-center font-bold text-lg">{state.blackScreenLargeCount}</span>
+                      <button
+                        onClick={() => updateState({ blackScreenLargeCount: state.blackScreenLargeCount + 1 })}
+                        className="w-9 h-9 rounded-full border-2 border-primary flex items-center justify-center hover:bg-primary hover:text-primary-foreground transition-colors"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 중형 카운터 */}
+                  <div className="flex items-center justify-between p-4 bg-secondary/30 rounded-xl">
+                    <div>
+                      <p className="font-bold text-sm">중형 <span className="font-normal text-muted-foreground">(높이 1600mm 미만)</span></p>
+                      {totalCount > 0 && (
+                        <p className="text-xs text-primary mt-0.5">{priceInfo.mediumUnitPrice.toLocaleString()}원/장</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => updateState({ blackScreenMediumCount: Math.max(0, state.blackScreenMediumCount - 1) })}
+                        className="w-9 h-9 rounded-full border-2 border-primary flex items-center justify-center hover:bg-primary hover:text-primary-foreground transition-colors disabled:opacity-40"
+                        disabled={state.blackScreenMediumCount === 0}
+                      >
+                        <Minus className="w-4 h-4" />
+                      </button>
+                      <span className="w-8 text-center font-bold text-lg">{state.blackScreenMediumCount}</span>
+                      <button
+                        onClick={() => updateState({ blackScreenMediumCount: state.blackScreenMediumCount + 1 })}
+                        className="w-9 h-9 rounded-full border-2 border-primary flex items-center justify-center hover:bg-primary hover:text-primary-foreground transition-colors"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 합계 미리보기 */}
+                  {totalCount > 0 && (
+                    <div className={`p-3 rounded-lg text-sm font-bold flex justify-between ${belowMin ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'}`}>
+                      <span>예상 소계 (총 {totalCount}장)</span>
+                      <span>{priceInfo.total.toLocaleString()}원{belowMin ? ' ← 최소 20만원 미달' : ''}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* 수량 입력 - 롤방충망 */}
+            {state.blackScreenServiceType === 'rollScreen' && (() => {
+              const rollInfo = getRollScreenPrice(state.blackScreenRollCount);
+              const tierLabel = state.blackScreenRollCount >= 6 ? '6장 이상 단가' : '1-5장 단가';
+              const belowMin = rollInfo.total > 0 && rollInfo.total < BLACK_SCREEN_MIN_PRICE;
+
+              return (
+                <div className="space-y-4 pt-2 border-t">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold">수량 선택</h3>
+                    {state.blackScreenRollCount > 0 && (
+                      <Badge variant="secondary" className="text-xs">{tierLabel} 적용</Badge>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between p-4 bg-secondary/30 rounded-xl">
+                    <div>
+                      <p className="font-bold text-sm">롤방충망</p>
+                      {state.blackScreenRollCount > 0 && (
+                        <p className="text-xs text-primary mt-0.5">{rollInfo.unitPrice.toLocaleString()}원/장</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => updateState({ blackScreenRollCount: Math.max(0, state.blackScreenRollCount - 1) })}
+                        className="w-9 h-9 rounded-full border-2 border-primary flex items-center justify-center hover:bg-primary hover:text-primary-foreground transition-colors disabled:opacity-40"
+                        disabled={state.blackScreenRollCount === 0}
+                      >
+                        <Minus className="w-4 h-4" />
+                      </button>
+                      <span className="w-8 text-center font-bold text-lg">{state.blackScreenRollCount}</span>
+                      <button
+                        onClick={() => updateState({ blackScreenRollCount: state.blackScreenRollCount + 1 })}
+                        className="w-9 h-9 rounded-full border-2 border-primary flex items-center justify-center hover:bg-primary hover:text-primary-foreground transition-colors"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {state.blackScreenRollCount > 0 && (
+                    <div className={`p-3 rounded-lg text-sm font-bold flex justify-between ${belowMin ? 'bg-destructive/10 text-destructive' : 'bg-primary/10 text-primary'}`}>
+                      <span>예상 소계 (총 {state.blackScreenRollCount}장)</span>
+                      <span>{rollInfo.total.toLocaleString()}원{belowMin ? ' ← 최소 20만원 미달' : ''}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            <div className="flex gap-3 pt-4">
+              <Button variant="outline" onClick={prevStep} className="flex-1">
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                이전
+              </Button>
+              <Button
+                onClick={() => goToStep(3)}
+                disabled={(() => {
+                  if (!state.blackScreenServiceType) return true;
+                  if (state.blackScreenServiceType === 'rollScreen') {
+                    const info = getRollScreenPrice(state.blackScreenRollCount);
+                    return state.blackScreenRollCount === 0 || info.total < BLACK_SCREEN_MIN_PRICE;
+                  }
+                  const info = getBlackScreenPrice(
+                    state.blackScreenServiceType,
+                    state.blackScreenLargeCount,
+                    state.blackScreenMediumCount
+                  );
+                  return (state.blackScreenLargeCount + state.blackScreenMediumCount) === 0 || info.total < BLACK_SCREEN_MIN_PRICE;
+                })()}
                 className="flex-1"
               >
                 견적 확인
@@ -1900,6 +2157,387 @@ export default function QuoteCalculator() {
           </div>
         )}
 
+        {/* Step 3: 블랙스텐 방충망 - 견적 결과 */}
+        {state.step === 3 && state.quoteType === 'blackScreenMesh' && (
+          <div className="space-y-6" ref={resultAreaRef}>
+            <div>
+              <h2 className="text-xl font-bold mb-2">견적 결과</h2>
+              {state.completedQuotes.length === 0 ? (
+                <p className="text-muted-foreground">블랙스텐 미세촘촘 방충망 견적</p>
+              ) : (
+                <ol className="text-muted-foreground space-y-0.5 text-sm list-none">
+                  <li>1. 블랙스텐 미세촘촘 방충망 견적</li>
+                  {state.completedQuotes.map((q, i) => (
+                    <li key={q.id}>{i + 2}. {q.productName} 견적</li>
+                  ))}
+                </ol>
+              )}
+            </div>
+
+            {(() => {
+              const svcOption = blackScreenServiceOptions.find(o => o.id === state.blackScreenServiceType);
+              const isRoll = state.blackScreenServiceType === 'rollScreen';
+              const isMesh = state.blackScreenServiceType === 'meshOnly' || state.blackScreenServiceType === 'frameAndMesh';
+
+              const meshSvcType = (state.blackScreenServiceType === 'meshOnly' || state.blackScreenServiceType === 'frameAndMesh')
+                ? state.blackScreenServiceType as 'meshOnly' | 'frameAndMesh'
+                : null;
+
+              const total = (() => {
+                if (isRoll) return getRollScreenPrice(state.blackScreenRollCount).total;
+                if (meshSvcType) {
+                  return getBlackScreenPrice(meshSvcType, state.blackScreenLargeCount, state.blackScreenMediumCount).total;
+                }
+                return 0;
+              })();
+
+              const meshPriceInfo = meshSvcType
+                ? getBlackScreenPrice(meshSvcType, state.blackScreenLargeCount, state.blackScreenMediumCount)
+                : null;
+              const rollPriceInfo = isRoll ? getRollScreenPrice(state.blackScreenRollCount) : null;
+              const totalCount = isRoll ? state.blackScreenRollCount : (state.blackScreenLargeCount + state.blackScreenMediumCount);
+              const tierLabel = totalCount >= 6 ? '6장 이상 단가' : (state.blackScreenServiceType === 'meshOnly' ? '3-5장 단가' : '1-5장 단가');
+
+              const completedTotal = state.completedQuotes.reduce((s, q) => s + q.total, 0);
+              const grandTotal = completedTotal + total;
+
+              return (
+                <>
+                  <Card>
+                    <CardContent className="p-5 space-y-4">
+                      <div className="text-center pb-4 border-b">
+                        <p className="text-sm text-muted-foreground mb-1">예상 견적 결과</p>
+                        <p className="text-xs text-muted-foreground">정확한 최종 견적은 방문 실측 후 확정됩니다. (예상 견적은 참고용)</p>
+                      </div>
+
+                      {/* 선택 내역 */}
+                      <div className="space-y-3">
+                        <h4 className="font-bold text-sm">
+                          {state.completedQuotes.length > 0 ? '선택 내역 1 : 블랙스텐 방충망' : '선택 내역'}
+                        </h4>
+                        <div className="space-y-2 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">서비스</span>
+                            <span className="font-medium">{svcOption?.name}</span>
+                          </div>
+                          {isMesh && meshPriceInfo && (
+                            <>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">적용 단가</span>
+                                <span className="font-medium">{tierLabel}</span>
+                              </div>
+                              {state.blackScreenLargeCount > 0 && (
+                                <div className="space-y-0.5">
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">대형 {state.blackScreenLargeCount}장 × {meshPriceInfo.largeUnitPrice.toLocaleString()}원</span>
+                                    <span className="font-medium">{(state.blackScreenLargeCount * meshPriceInfo.largeUnitPrice).toLocaleString()}원</span>
+                                  </div>
+                                  <div className="flex justify-end">
+                                    <span className="text-xs text-muted-foreground/70 font-mono">상품코드: {meshPriceInfo.largeCode}</span>
+                                  </div>
+                                </div>
+                              )}
+                              {state.blackScreenMediumCount > 0 && (
+                                <div className="space-y-0.5">
+                                  <div className="flex justify-between">
+                                    <span className="text-muted-foreground">중형 {state.blackScreenMediumCount}장 × {meshPriceInfo.mediumUnitPrice.toLocaleString()}원</span>
+                                    <span className="font-medium">{(state.blackScreenMediumCount * meshPriceInfo.mediumUnitPrice).toLocaleString()}원</span>
+                                  </div>
+                                  <div className="flex justify-end">
+                                    <span className="text-xs text-muted-foreground/70 font-mono">상품코드: {meshPriceInfo.mediumCode}</span>
+                                  </div>
+                                </div>
+                              )}
+                            </>
+                          )}
+                          {isRoll && rollPriceInfo && (
+                            <>
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">적용 단가</span>
+                                <span className="font-medium">{tierLabel}</span>
+                              </div>
+                              <div className="space-y-0.5">
+                                <div className="flex justify-between">
+                                  <span className="text-muted-foreground">{state.blackScreenRollCount}장 × {rollPriceInfo.unitPrice.toLocaleString()}원</span>
+                                  <span className="font-medium">{rollPriceInfo.total.toLocaleString()}원</span>
+                                </div>
+                                <div className="flex justify-end">
+                                  <span className="text-xs text-muted-foreground/70 font-mono">상품코드: {rollPriceInfo.code}</span>
+                                </div>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                        <div className="flex justify-between pt-2 border-t text-sm">
+                          <span className="font-semibold">블랙스텐 방충망 소계</span>
+                          <span className="font-semibold">{total.toLocaleString()}원</span>
+                        </div>
+                      </div>
+
+                      {/* 완료된 상품들 */}
+                      {state.completedQuotes.map((q, i) => (
+                        <div key={q.id} className="space-y-3 pt-3 border-t">
+                          <h4 className="font-bold text-sm">선택 내역 {i + 2} : {q.productName}</h4>
+                          <div className="space-y-2 text-sm">
+                            {q.displayDetails.map((d, j) => (
+                              <div key={j} className={`flex justify-between ${d.indent ? 'pl-3' : ''}`}>
+                                <span className="text-muted-foreground">{d.label}</span>
+                                <span className="font-medium text-right">{d.value}</span>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex justify-between pt-2 border-t text-sm">
+                            <span className="font-semibold">{q.productName} 소계</span>
+                            <span className="font-semibold">{q.total.toLocaleString()}원</span>
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* 합산 */}
+                      {state.completedQuotes.length > 0 && (
+                        <div className="p-3 bg-secondary/30 rounded-lg space-y-2 text-sm border-t pt-3">
+                          <p className="text-xs font-bold text-muted-foreground">합산 견적 내역</p>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">블랙스텐 방충망 ({svcOption?.name})</span>
+                            <span>{total.toLocaleString()}원</span>
+                          </div>
+                          {state.completedQuotes.map(q => (
+                            <div key={q.id} className="flex justify-between">
+                              <span className="text-muted-foreground">{q.label}</span>
+                              <span>{q.total.toLocaleString()}원</span>
+                            </div>
+                          ))}
+                          <div className="flex justify-between font-bold border-t pt-2">
+                            <span>합산 총액</span>
+                            <span>{grandTotal.toLocaleString()}원</span>
+                          </div>
+                        </div>
+                      )}
+
+                      {state.completedQuotes.length === 0 && (
+                        <div className="flex justify-between pt-3 border-t">
+                          <span className="font-bold">총 시공 견적</span>
+                          <span className="font-bold text-lg">{total.toLocaleString()}원</span>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* 블랙스텐망 교체 특장점 */}
+                  {state.blackScreenServiceType === 'meshOnly' && (
+                    <Card className="bg-primary/10 border-primary/30">
+                      <CardContent className="p-4">
+                        <h4 className="font-bold text-base mb-3 text-primary">블랙스텐망 교체 특장점</h4>
+                        <p className="text-xs text-muted-foreground mb-3">한국메탈 블랙 0.18*24메쉬 · {'"'}벌레는 더 막고, 시야는 더 좋고, 오래 쓰는 프리미엄 방충망{'"'}</p>
+                        <ul className="space-y-3">
+                          {BLACK_SCREEN_FEATURES.map((f, i) => (
+                            <li key={i} className="flex items-start gap-2 text-sm">
+                              <Check className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                              <span><span className="font-bold">{f.title}</span> → {f.description}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {/* 에누리 */}
+                  {(() => {
+                    const baseTotal = state.completedQuotes.length > 0 ? grandTotal : total;
+                    const discountedTotal = discountPercent > 0 ? applyDiscount(baseTotal, discountPercent) : null;
+                    return (
+                      <Card className="border-orange-200">
+                        <CardContent className="p-4 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-orange-600">에누리</span>
+                            <Button
+                              size="sm"
+                              variant={showDiscountInput ? 'default' : 'outline'}
+                              className="h-8 px-3 text-sm border-orange-300 text-orange-600 hover:bg-orange-50"
+                              onClick={() => { if (showDiscountInput) { resetDiscount(); } else { setShowDiscountInput(true); } }}
+                            >
+                              {showDiscountInput ? '취소' : '에누리 적용'}
+                            </Button>
+                          </div>
+                          {showDiscountInput && (
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="number" min={0} max={100} placeholder="할인율 입력"
+                                value={discountInputValue}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setDiscountInputValue(v);
+                                  const n = parseFloat(v);
+                                  setDiscountPercent(!isNaN(n) && n > 0 ? n : 0);
+                                }}
+                                className="h-9 w-32 text-center"
+                              />
+                              <span className="text-sm font-medium">%</span>
+                            </div>
+                          )}
+                          {discountedTotal !== null && discountPercent > 0 && (
+                            <div className="space-y-1 pt-1 border-t text-sm">
+                              <div className="flex justify-between text-muted-foreground">
+                                <span>원래 견적</span>
+                                <span>{baseTotal.toLocaleString()}원</span>
+                              </div>
+                              <div className="flex justify-between text-red-500">
+                                <span>에누리 ({discountPercent}%)</span>
+                                <span>-{(baseTotal - discountedTotal).toLocaleString()}원</span>
+                              </div>
+                              <div className="flex justify-between font-bold text-lg pt-1 border-t text-orange-600">
+                                <span>에누리 적용가</span>
+                                <span>{discountedTotal.toLocaleString()}원</span>
+                              </div>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  })()}
+
+                  {/* 다른 상품 추가 */}
+                  <Button
+                    className="w-full h-12 font-semibold"
+                    variant="outline"
+                    onClick={() => {
+                      let sectionText = `[블랙스텐 방충망 - ${svcOption?.name}]\n`;
+                      if (isMesh && meshPriceInfo) {
+                        sectionText += `적용단가: ${tierLabel}\n`;
+                        if (state.blackScreenLargeCount > 0) sectionText += `대형 ${state.blackScreenLargeCount}장 × ${meshPriceInfo.largeUnitPrice.toLocaleString()}원 = ${(state.blackScreenLargeCount * meshPriceInfo.largeUnitPrice).toLocaleString()}원 [${meshPriceInfo.largeCode}]\n`;
+                        if (state.blackScreenMediumCount > 0) sectionText += `중형 ${state.blackScreenMediumCount}장 × ${meshPriceInfo.mediumUnitPrice.toLocaleString()}원 = ${(state.blackScreenMediumCount * meshPriceInfo.mediumUnitPrice).toLocaleString()}원 [${meshPriceInfo.mediumCode}]\n`;
+                      }
+                      if (isRoll && rollPriceInfo) {
+                        sectionText += `${state.blackScreenRollCount}장 × ${rollPriceInfo.unitPrice.toLocaleString()}원 [${rollPriceInfo.code}]\n`;
+                      }
+                      sectionText += `소계: ${total.toLocaleString()}원`;
+
+                      const displayDetails: CompletedQuote['displayDetails'] = [
+                        { label: '서비스', value: svcOption?.name ?? '' },
+                      ];
+                      if (isMesh && meshPriceInfo) {
+                        displayDetails.push({ label: '적용단가', value: tierLabel });
+                        if (state.blackScreenLargeCount > 0) {
+                          displayDetails.push({ label: `대형 ${state.blackScreenLargeCount}장`, value: `${(state.blackScreenLargeCount * meshPriceInfo.largeUnitPrice).toLocaleString()}원` });
+                          displayDetails.push({ label: '상품코드', value: meshPriceInfo.largeCode, indent: true });
+                        }
+                        if (state.blackScreenMediumCount > 0) {
+                          displayDetails.push({ label: `중형 ${state.blackScreenMediumCount}장`, value: `${(state.blackScreenMediumCount * meshPriceInfo.mediumUnitPrice).toLocaleString()}원` });
+                          displayDetails.push({ label: '상품코드', value: meshPriceInfo.mediumCode, indent: true });
+                        }
+                      }
+                      if (isRoll && rollPriceInfo) {
+                        displayDetails.push({ label: `${state.blackScreenRollCount}장`, value: `${rollPriceInfo.total.toLocaleString()}원` });
+                        displayDetails.push({ label: '상품코드', value: rollPriceInfo.code, indent: true });
+                      }
+
+                      addToCompletedQuotes({
+                        id: Date.now().toString(),
+                        label: `블랙스텐 방충망 (${svcOption?.name})`,
+                        productName: '블랙스텐 미세촘촘 방충망',
+                        total,
+                        sectionText,
+                        type: 'blackScreenMesh',
+                        displayDetails,
+                      });
+                    }}
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    다른 상품 추가하기
+                  </Button>
+
+                  <div className="flex gap-3">
+                    <Button
+                      variant="outline"
+                      className="flex-1"
+                      onClick={() => {
+                        let text = state.completedQuotes.length > 0 ? `[합산 견적서]\n\n` : `[블랙스텐 미세촘촘 방충망 견적서]\n\n`;
+                        text += `[블랙스텐 방충망 - ${svcOption?.name}]\n`;
+                        if (isMesh && meshPriceInfo) {
+                          text += `적용단가: ${tierLabel}\n`;
+                          if (state.blackScreenLargeCount > 0) text += `대형 ${state.blackScreenLargeCount}장 × ${meshPriceInfo.largeUnitPrice.toLocaleString()}원 = ${(state.blackScreenLargeCount * meshPriceInfo.largeUnitPrice).toLocaleString()}원 [${meshPriceInfo.largeCode}]\n`;
+                          if (state.blackScreenMediumCount > 0) text += `중형 ${state.blackScreenMediumCount}장 × ${meshPriceInfo.mediumUnitPrice.toLocaleString()}원 = ${(state.blackScreenMediumCount * meshPriceInfo.mediumUnitPrice).toLocaleString()}원 [${meshPriceInfo.mediumCode}]\n`;
+                        }
+                        if (isRoll && rollPriceInfo) {
+                          text += `${state.blackScreenRollCount}장 × ${rollPriceInfo.unitPrice.toLocaleString()}원 [${rollPriceInfo.code}]\n`;
+                        }
+                        if (state.completedQuotes.length > 0) {
+                          text += `소계: ${total.toLocaleString()}원\n\n`;
+                          state.completedQuotes.forEach(q => { text += q.sectionText + '\n\n'; });
+                          text += `\n[합산 견적 내역]\n`;
+                          text += `블랙스텐 방충망 (${svcOption?.name}): ${total.toLocaleString()}원\n`;
+                          state.completedQuotes.forEach(q => { text += `${q.label}: ${q.total.toLocaleString()}원\n`; });
+                          text += `*합산 총액: ${grandTotal.toLocaleString()}원\n`;
+                        } else {
+                          text += `\n*총 시공 견적: ${total.toLocaleString()}원\n`;
+                        }
+                        const baseTotal = state.completedQuotes.length > 0 ? grandTotal : total;
+                        if (discountPercent > 0) {
+                          const discountedTotal = applyDiscount(baseTotal, discountPercent);
+                          text += `\n[에누리 ${discountPercent}% 적용]\n에누리 적용가: ${discountedTotal.toLocaleString()}원\n`;
+                        }
+                        text += `\n[안내사항]\n`;
+                        PRODUCT_NOTICES['blackScreenMesh'].forEach(n => { text += `• ${n}\n`; });
+                        text += `\n문의: 코끼리시스템 1555-0143`;
+                        navigator.clipboard.writeText(text);
+                        setCopied(true);
+                        setTimeout(() => setCopied(false), 2000);
+                      }}
+                    >
+                      {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
+                      {copied ? '복사됨' : '견적 복사'}
+                    </Button>
+                    <Button variant="outline" className="flex-1" onClick={captureQuote} disabled={capturing}>
+                      <Camera className="w-4 h-4 mr-2" />
+                      {capturing ? '캡처 중...' : '견적 캡처'}
+                    </Button>
+                  </div>
+
+                  {state.completedQuotes.some(q => q.type === 'glassRailing') && (
+                    <Card className="bg-primary/10 border-primary/30">
+                      <CardContent className="p-4">
+                        <h4 className="font-bold text-base mb-3 text-primary">유리난간 견적 포함사항</h4>
+                        <ul className="text-sm space-y-2">
+                          <li className="flex items-start gap-2">
+                            <Check className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                            <span className="font-medium">고구려 안전방충망(0.4mm) 설치 포함 (거실)</span>
+                          </li>
+                          <li className="flex items-start gap-2">
+                            <Check className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                            <span>고구려 안전방충망, 행위허가 대행비용, 입주민동의서 대행비용, 부가세가 모두 포함된 금액입니다.</span>
+                          </li>
+                        </ul>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  <Card className="bg-secondary/50">
+                    <CardContent className="p-4">
+                      <h4 className="font-bold text-sm mb-2">안내 사항</h4>
+                      <ul className="text-xs text-muted-foreground space-y-1">
+                        {Array.from(new Set([
+                          ...state.completedQuotes.flatMap(q => PRODUCT_NOTICES[q.type]),
+                          ...PRODUCT_NOTICES['blackScreenMesh'],
+                        ])).map((notice, i) => (
+                          <li key={i}>• {notice}</li>
+                        ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
+
+                  <div className="flex gap-3">
+                    <Button variant="outline" onClick={resetAll} className="flex-1">처음으로</Button>
+                    <Button variant="outline" onClick={prevStep} className="flex-1">
+                      <ChevronLeft className="w-4 h-4 mr-1" />
+                      수정하기
+                    </Button>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
+
         {/* Step 3: 안전방충망 - 설치환경 및 망타입 선택 */}
         {state.step === 3 && state.quoteType === 'safetyScreen' && (
           <div className="space-y-6">
@@ -2609,8 +3247,8 @@ export default function QuoteCalculator() {
         )}
       </main>
 
-      {/* 푸터 - 결제페이지(step 6, 유리난간 step 3, 후퍼옵틱 step 3)에서만 표시 */}
-      {(state.step === 6 || (state.step === 3 && (state.quoteType === 'glassRailing' || state.quoteType === 'huperOptik'))) && (
+      {/* 푸터 - 결과 페이지에서만 표시 */}
+      {(state.step === 6 || (state.step === 3 && (state.quoteType === 'glassRailing' || state.quoteType === 'huperOptik' || state.quoteType === 'blackScreenMesh'))) && (
         <footer className="border-t mt-12 py-6">
           <div className="max-w-lg mx-auto px-4">
             <div className="flex items-center justify-between">

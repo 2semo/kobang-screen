@@ -544,6 +544,18 @@ export default function QuoteCalculator() {
                 ════════════════════════════════ */}
             {state.step === 1 && (
               <div className="space-y-6 py-4">
+                {/* 히어로 영상 */}
+                <div className="rounded-xl overflow-hidden -mx-4 sm:mx-0 aspect-[3/4]">
+                  <video
+                    src="/hero.mp4"
+                    autoPlay
+                    loop
+                    muted
+                    playsInline
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+
                 <div className="text-center space-y-2">
                   <h1 className="text-2xl font-bold">방충망 셀프 견적</h1>
                   <p className="text-muted-foreground leading-relaxed">
@@ -683,6 +695,14 @@ export default function QuoteCalculator() {
                         }
                       >
                         <CardContent className="p-4">
+                          {option.id === "meshOnly" && (
+                            <img
+                              src="/blackscreen-mesh.png"
+                              alt="블랙스텐망"
+                              className="w-full rounded-lg mb-3 object-cover"
+                              style={{ maxHeight: "180px" }}
+                            />
+                          )}
                           <div className="flex items-start justify-between">
                             <div className="flex-1 pr-2">
                               <h4 className="font-bold">{option.name}</h4>

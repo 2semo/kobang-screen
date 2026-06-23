@@ -699,8 +699,7 @@ export default function QuoteCalculator() {
                             <img
                               src="/blackscreen-mesh.png"
                               alt="블랙스텐망"
-                              className="w-full rounded-lg mb-3 object-cover"
-                              style={{ maxHeight: "180px" }}
+                              className="w-full rounded-lg mb-3"
                             />
                           )}
                           <div className="flex items-start justify-between">

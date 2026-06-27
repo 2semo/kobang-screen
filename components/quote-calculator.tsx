@@ -388,7 +388,7 @@ export default function QuoteCalculator() {
     }
     text += `\n*총 시공 견적: ${total.toLocaleString()}원\n\n[안내사항]\n`;
     PRODUCT_NOTICES["safetyScreen"].forEach((n) => { text += `• ${n}\n`; });
-    text += `\n문의: 코끼리시스템 1555-0143`;
+    text += `\n문자문의: Kobang 010-5638-3869`;
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -403,7 +403,7 @@ export default function QuoteCalculator() {
         scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false,
       });
       const link = document.createElement("a");
-      link.download = "코끼리시스템_견적서.png";
+      link.download = "Kobang_견적서.png";
       link.href = canvas.toDataURL("image/png");
       link.click();
     } catch (e) {
@@ -481,18 +481,10 @@ export default function QuoteCalculator() {
       <header className="sticky top-0 z-50 bg-background/95 backdrop-blur border-b">
         <div className="max-w-lg mx-auto px-4 py-2 flex items-center justify-between">
           <div className="flex items-center gap-0">
-            <img src="/elephant-logo2.png" alt="코끼리시스템 로고" className="h-16 w-auto" />
-            <span className="font-bold text-lg leading-tight -ml-1">코끼리시스템</span>
+            <img src="/kobang-logo.png" alt="Kobang 로고" className="h-16 w-auto" />
+            <span className="font-bold text-lg leading-tight -ml-1">Kobang</span>
           </div>
-          <a
-            href="tel:1555-0143"
-            className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-4 py-3 rounded-lg text-base font-bold hover:bg-primary/90 transition-colors"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-            </svg>
-            1555-0143
-          </a>
+          <img src="/koggiri.png" alt="KOGGIRI 로고" className="h-[58px] w-auto" />
         </div>
       </header>
 
@@ -507,7 +499,7 @@ export default function QuoteCalculator() {
               <h2 className="text-2xl font-bold mb-2">신청이 완료되었습니다!</h2>
               <p className="text-muted-foreground leading-relaxed">
                 빠른 시일 내에 연락드리겠습니다.<br />
-                문의사항은 아래 번호로 전화주세요.
+                문의사항은 아래 번호로 문자 주세요.
               </p>
             </div>
 
@@ -544,11 +536,11 @@ export default function QuoteCalculator() {
             </Card>
 
             <a
-              href="tel:1555-0143"
+              href="sms:010-5638-3869"
               className="flex items-center justify-center gap-2 w-full h-12 bg-primary text-primary-foreground rounded-lg font-bold text-base hover:bg-primary/90 transition-colors"
             >
-              <Phone className="w-5 h-5" />
-              1555-0143 바로 전화하기
+              <MessageSquare className="w-5 h-5" />
+              010-5638-3869 문자문의
             </a>
             <Button variant="outline" onClick={resetAll} className="w-full">
               처음으로 돌아가기
@@ -630,17 +622,18 @@ export default function QuoteCalculator() {
                     className="border-2 border-primary bg-primary/5 hover:bg-primary/10 transition-colors cursor-pointer"
                     onClick={() => { updateState({ quoteType: "blackScreenMesh" }); nextStep(); }}
                   >
-                    <CardContent className="p-5">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-bold text-lg text-primary">블랙스텐 방충망 교체</span>
-                            <Badge className="text-xs bg-primary">인기</Badge>
-                          </div>
-                          <p className="text-sm text-muted-foreground">미세촘촘 · 탁월한 시야 · 내구성 우수</p>
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <span className="font-bold text-lg text-primary">블랙스텐 방충망 교체</span>
+                          <Badge className="text-xs bg-primary ml-2">인기</Badge>
+                          <p className="text-sm text-muted-foreground mt-1">미세촘촘 · 탁월한 시야 · 내구성 우수</p>
                           <p className="text-sm text-muted-foreground">망교체 / 틀제작+망교체 / 롤방충망</p>
                         </div>
-                        <ArrowRight className="w-6 h-6 text-primary flex-shrink-0 ml-3" />
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <img src="/blackscreen-mesh.png" alt="블랙스텐 방충망" className="w-20 h-20 object-cover rounded-lg" />
+                          <ArrowRight className="w-5 h-5 text-primary" />
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -651,13 +644,19 @@ export default function QuoteCalculator() {
                     onClick={() => { updateState({ quoteType: "safetyScreen" }); nextStep(); }}
                   >
                     <CardContent className="p-5">
-                      <div className="flex items-center justify-between">
-                        <div>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex-1 min-w-0">
                           <span className="font-bold text-lg">안전방충망 설치</span>
                           <p className="text-sm text-muted-foreground mt-1">추락방지 · 방범 겸용</p>
                           <p className="text-sm text-muted-foreground">고구려시스템 · JS안전방충망</p>
                         </div>
-                        <ArrowRight className="w-6 h-6 text-muted-foreground flex-shrink-0 ml-3" />
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className="flex gap-2">
+                            <img src="/brand-goguryeo.png" alt="고구려시스템" className="w-[68px] h-20 object-cover rounded-lg border border-border" />
+                            <img src="/brand-js.png" alt="JS안전방충망" className="w-[68px] h-20 object-cover rounded-lg border border-border" />
+                          </div>
+                          <ArrowRight className="w-5 h-5 text-muted-foreground" />
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -668,16 +667,27 @@ export default function QuoteCalculator() {
                     onClick={() => { updateState({ quoteType: "mixed" }); nextStep(); }}
                   >
                     <CardContent className="p-5">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="flex items-center gap-2 mb-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <span className="font-bold text-lg">혼합 견적</span>
                             <Badge variant="outline" className="text-xs">블랙스텐 + 안전방충망</Badge>
                           </div>
                           <p className="text-sm text-muted-foreground">공간별로 두 가지 방충망을 함께 견적</p>
                           <p className="text-sm text-muted-foreground">예) 거실·방1 안전방충망 / 방2·다용도실 블랙스텐</p>
                         </div>
-                        <ArrowRight className="w-6 h-6 text-muted-foreground flex-shrink-0 ml-3" />
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <div className="rounded-lg overflow-hidden border border-border">
+                            <div className="flex">
+                              <img src="/brand-goguryeo.png" alt="고구려시스템" className="w-[56px] h-[68px] object-cover" />
+                              <div className="w-px bg-border" />
+                              <img src="/brand-js.png" alt="JS안전방충망" className="w-[56px] h-[68px] object-cover" />
+                            </div>
+                            <div className="h-px bg-border" />
+                            <img src="/blackscreen-mesh.png" alt="블랙스텐" className="w-full h-[36px] object-cover object-bottom" />
+                          </div>
+                          <ArrowRight className="w-5 h-5 text-muted-foreground" />
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -710,7 +720,9 @@ export default function QuoteCalculator() {
                 </div>
 
                 <div className="space-y-4">
-                  {brands.map((brand) => (
+                  {brands.map((brand) => {
+                    const brandImage = brand.id === "goguryeo" ? "/brand-goguryeo.png" : "/brand-js.png";
+                    return (
                     <Card
                       key={brand.id}
                       className={`cursor-pointer transition-all ${state.brand === brand.id ? "ring-2 ring-primary border-primary" : "hover:border-primary/50"}`}
@@ -728,6 +740,11 @@ export default function QuoteCalculator() {
                             </div>
                           )}
                         </div>
+                        <img
+                          src={brandImage}
+                          alt={`${brand.name} 상품 이미지`}
+                          className="w-full rounded-lg mb-3 object-cover"
+                        />
                         <div className="flex flex-wrap gap-2 mb-3">
                           {brand.features.slice(0, 4).map((f) => (
                             <Badge key={f} variant="secondary" className="text-xs">{f}</Badge>
@@ -736,7 +753,8 @@ export default function QuoteCalculator() {
                         <p className="text-sm text-primary font-medium">{brand.highlight}</p>
                       </CardContent>
                     </Card>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 <div className="flex gap-3 pt-4">
@@ -1215,7 +1233,7 @@ export default function QuoteCalculator() {
                             }
                             text += `\n*총 시공 견적: ${total.toLocaleString()}원\n\n[안내사항]\n`;
                             PRODUCT_NOTICES["blackScreenMesh"].forEach((n) => { text += `• ${n}\n`; });
-                            text += `\n문의: 코끼리시스템 1555-0143`;
+                            text += `\n문자문의: Kobang 010-5638-3869`;
                             navigator.clipboard.writeText(text);
                             setCopied(true);
                             setTimeout(() => setCopied(false), 2000);
@@ -1663,7 +1681,7 @@ export default function QuoteCalculator() {
                           const { text, total } = getQuoteSummary();
                           let copyText = `[블랙스텐 + 안전방충망 혼합 견적서]\n\n${text}\n\n[안내사항]\n`;
                           PRODUCT_NOTICES["mixed"].forEach((n) => { copyText += `• ${n}\n`; });
-                          copyText += `\n문의: 코끼리시스템 1555-0143`;
+                          copyText += `\n문자문의: Kobang 010-5638-3869`;
                           navigator.clipboard.writeText(copyText);
                           setCopied(true);
                           setTimeout(() => setCopied(false), 2000);
@@ -1829,17 +1847,15 @@ export default function QuoteCalculator() {
           <div className="max-w-lg mx-auto px-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <img src="/elephant-logo2.png" alt="코끼리시스템 로고" className="h-14 w-auto" />
-                <span className="font-medium text-base">코끼리시스템</span>
+                <img src="/kobang-logo.png" alt="Kobang 로고" className="h-14 w-auto" />
+                <span className="font-medium text-base">Kobang</span>
               </div>
               <a
-                href="tel:1555-0143"
+                href="sms:010-5638-3869"
                 className="inline-flex items-center gap-1.5 bg-primary text-primary-foreground px-3 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-                </svg>
-                1555-0143
+                <MessageSquare className="w-4 h-4" />
+                문자문의 010-5638-3869
               </a>
             </div>
           </div>

@@ -9,6 +9,8 @@ export const saveQuote = mutation({
     installType: v.optional(v.string()),
     total: v.number(),
     quoteSummary: v.string(),
+    region: v.optional(v.string()),
+    city: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert("quotes", {
@@ -44,5 +46,21 @@ export const getQuoteStats = query({
     }, {} as Record<string, number>)
 
     return { total: all.length, todayCount, byType }
+  },
+})
+
+export const getRegionStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const all = await ctx.db.query("quotes").collect()
+    const byRegion = all.reduce((acc, q) => {
+      const key = q.region ?? "알 수 없음"
+      acc[key] = (acc[key] || 0) + 1
+      return acc
+    }, {} as Record<string, number>)
+
+    return Object.entries(byRegion)
+      .sort((a, b) => b[1] - a[1])
+      .map(([region, count]) => ({ region, count }))
   },
 })

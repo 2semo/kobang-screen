@@ -52,6 +52,7 @@ export default function AdminPage() {
   const applications = useQuery(api.applications.listApplications) ?? [];
   const appStats = useQuery(api.applications.getApplicationStats);
   const quoteStats = useQuery(api.quotes.getQuoteStats);
+  const regionStats = useQuery(api.quotes.getRegionStats) ?? [];
   const updateStatus = useMutation(api.applications.updateStatus);
 
   const [selected, setSelected] = useState<string | null>(null);
@@ -212,6 +213,33 @@ export default function AdminPage() {
               </div>
             ))}
           </div>
+        </div>
+
+        {/* 지역별 현황 */}
+        <div className="bg-white rounded-2xl shadow p-4">
+          <h2 className="font-bold text-lg mb-3">견적 조회 지역별 현황</h2>
+          {regionStats.length === 0 ? (
+            <p className="text-sm text-gray-400 text-center py-4">아직 지역 데이터가 없습니다.</p>
+          ) : (
+            <div className="space-y-2">
+              {regionStats.map(({ region, count }) => {
+                const max = regionStats[0]?.count ?? 1;
+                const pct = Math.round((count / max) * 100);
+                return (
+                  <div key={region} className="flex items-center gap-3">
+                    <span className="text-sm text-gray-700 w-24 flex-shrink-0">{region}</span>
+                    <div className="flex-1 bg-gray-100 rounded-full h-2.5 overflow-hidden">
+                      <div
+                        className="bg-blue-500 h-2.5 rounded-full transition-all"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <span className="text-sm font-bold text-blue-600 w-8 text-right">{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>

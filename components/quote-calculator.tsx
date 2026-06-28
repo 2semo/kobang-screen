@@ -196,14 +196,31 @@ export default function QuoteCalculator() {
     quoteSavedRef.current = true;
 
     const { text: quoteSummary, total } = getQuoteSummary();
-    void saveQuoteMutation({
-      quoteType: state.quoteType ?? "",
-      brand: state.brand ?? undefined,
-      meshType: state.meshType ?? undefined,
-      installType: state.installType ?? undefined,
-      total,
-      quoteSummary,
-    }).catch(() => {});
+
+    fetch("https://ip-api.com/json/?fields=regionName,city,status&lang=ko")
+      .then((r) => r.json())
+      .then((geo) => {
+        void saveQuoteMutation({
+          quoteType: state.quoteType ?? "",
+          brand: state.brand ?? undefined,
+          meshType: state.meshType ?? undefined,
+          installType: state.installType ?? undefined,
+          total,
+          quoteSummary,
+          region: geo.status === "success" ? geo.regionName : undefined,
+          city: geo.status === "success" ? geo.city : undefined,
+        }).catch(() => {});
+      })
+      .catch(() => {
+        void saveQuoteMutation({
+          quoteType: state.quoteType ?? "",
+          brand: state.brand ?? undefined,
+          meshType: state.meshType ?? undefined,
+          installType: state.installType ?? undefined,
+          total,
+          quoteSummary,
+        }).catch(() => {});
+      });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.step, state.quoteType]);
 

@@ -13,6 +13,8 @@ export default defineSchema({
     installType: v.optional(v.string()),
     total: v.number(),
     quoteSummary: v.string(),
+    region: v.optional(v.string()),   // 지역 (예: 서울, 경기도)
+    city: v.optional(v.string()),     // 시/군/구
     createdAt: v.number(),        // Date.now()
   }).index("by_createdAt", ["createdAt"]),
 

@@ -143,6 +143,7 @@ export default function QuoteCalculator() {
   const [state, setState] = useState<QuoteState>(initialState);
   const [copied, setCopied] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  const [showShareButtons, setShowShareButtons] = useState(false);
   const [appForm, setAppForm] = useState<ApplicationForm>({
     name: "",
     phone: "",
@@ -1266,36 +1267,44 @@ export default function QuoteCalculator() {
                         <ArrowRight className="w-5 h-5 ml-2" />
                       </Button>
 
-                      <div className="flex gap-3">
-                        <Button
-                          variant="outline"
-                          className="flex-1"
-                          onClick={() => {
-                            let text = `[블랙스텐 방충망 견적서]\n\n[블랙스텐 방충망 - ${svcOption?.name}]\n`;
-                            if (meshPriceInfo) {
-                              text += `적용단가: ${tierLabel}\n`;
-                              if (state.blackScreenLargeCount > 0) text += `대형 ${state.blackScreenLargeCount}장 × ${meshPriceInfo.largeUnitPrice.toLocaleString()}원 = ${(state.blackScreenLargeCount * meshPriceInfo.largeUnitPrice).toLocaleString()}원\n`;
-                              if (state.blackScreenMediumCount > 0) text += `중형 ${state.blackScreenMediumCount}장 × ${meshPriceInfo.mediumUnitPrice.toLocaleString()}원 = ${(state.blackScreenMediumCount * meshPriceInfo.mediumUnitPrice).toLocaleString()}원\n`;
-                            }
-                            if (rollPriceInfo) {
-                              text += `${state.blackScreenRollCount}장 × ${rollPriceInfo.unitPrice.toLocaleString()}원\n`;
-                            }
-                            text += `\n*총 시공 견적: ${total.toLocaleString()}원\n\n[안내사항]\n`;
-                            PRODUCT_NOTICES["blackScreenMesh"].forEach((n) => { text += `• ${n}\n`; });
-                            text += `\n문자문의: Kobang 010-5638-3869`;
-                            navigator.clipboard.writeText(text);
-                            setCopied(true);
-                            setTimeout(() => setCopied(false), 2000);
-                          }}
-                        >
-                          {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
-                          {copied ? "복사됨" : "견적 복사"}
-                        </Button>
-                        <Button variant="outline" className="flex-1" onClick={captureQuote} disabled={capturing}>
-                          <Camera className="w-4 h-4 mr-2" />
-                          {capturing ? "캡처 중..." : "견적 캡처"}
-                        </Button>
-                      </div>
+                      <button
+                        onClick={() => setShowShareButtons(!showShareButtons)}
+                        className="text-xs text-muted-foreground w-full text-center py-1"
+                      >
+                        {showShareButtons ? "견적 복사/캡처 숨기기 ▲" : "견적 복사/캡처 ▼"}
+                      </button>
+                      {showShareButtons && (
+                        <div className="flex gap-3">
+                          <Button
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() => {
+                              let text = `[블랙스텐 방충망 견적서]\n\n[블랙스텐 방충망 - ${svcOption?.name}]\n`;
+                              if (meshPriceInfo) {
+                                text += `적용단가: ${tierLabel}\n`;
+                                if (state.blackScreenLargeCount > 0) text += `대형 ${state.blackScreenLargeCount}장 × ${meshPriceInfo.largeUnitPrice.toLocaleString()}원 = ${(state.blackScreenLargeCount * meshPriceInfo.largeUnitPrice).toLocaleString()}원\n`;
+                                if (state.blackScreenMediumCount > 0) text += `중형 ${state.blackScreenMediumCount}장 × ${meshPriceInfo.mediumUnitPrice.toLocaleString()}원 = ${(state.blackScreenMediumCount * meshPriceInfo.mediumUnitPrice).toLocaleString()}원\n`;
+                              }
+                              if (rollPriceInfo) {
+                                text += `${state.blackScreenRollCount}장 × ${rollPriceInfo.unitPrice.toLocaleString()}원\n`;
+                              }
+                              text += `\n*총 시공 견적: ${total.toLocaleString()}원\n\n[안내사항]\n`;
+                              PRODUCT_NOTICES["blackScreenMesh"].forEach((n) => { text += `• ${n}\n`; });
+                              text += `\n문자문의: Kobang 010-5638-3869`;
+                              navigator.clipboard.writeText(text);
+                              setCopied(true);
+                              setTimeout(() => setCopied(false), 2000);
+                            }}
+                          >
+                            {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
+                            {copied ? "복사됨" : "견적 복사"}
+                          </Button>
+                          <Button variant="outline" className="flex-1" onClick={captureQuote} disabled={capturing}>
+                            <Camera className="w-4 h-4 mr-2" />
+                            {capturing ? "캡처 중..." : "견적 캡처"}
+                          </Button>
+                        </div>
+                      )}
 
                       <Card className="bg-secondary/50">
                         <CardContent className="p-4">
@@ -1563,16 +1572,24 @@ export default function QuoteCalculator() {
                         <ArrowRight className="w-5 h-5 ml-2" />
                       </Button>
 
-                      <div className="flex gap-3">
-                        <Button variant="outline" className="flex-1" onClick={copySafetyScreenQuote}>
-                          {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
-                          {copied ? "복사됨" : "견적 복사"}
-                        </Button>
-                        <Button variant="outline" className="flex-1" onClick={captureQuote} disabled={capturing}>
-                          <Camera className="w-4 h-4 mr-2" />
-                          {capturing ? "캡처 중..." : "견적 캡처"}
-                        </Button>
-                      </div>
+                      <button
+                        onClick={() => setShowShareButtons(!showShareButtons)}
+                        className="text-xs text-muted-foreground w-full text-center py-1"
+                      >
+                        {showShareButtons ? "견적 복사/캡처 숨기기 ▲" : "견적 복사/캡처 ▼"}
+                      </button>
+                      {showShareButtons && (
+                        <div className="flex gap-3">
+                          <Button variant="outline" className="flex-1" onClick={copySafetyScreenQuote}>
+                            {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
+                            {copied ? "복사됨" : "견적 복사"}
+                          </Button>
+                          <Button variant="outline" className="flex-1" onClick={captureQuote} disabled={capturing}>
+                            <Camera className="w-4 h-4 mr-2" />
+                            {capturing ? "캡처 중..." : "견적 캡처"}
+                          </Button>
+                        </div>
+                      )}
 
                       <Card className="bg-secondary/50">
                         <CardContent className="p-4">
@@ -1725,24 +1742,32 @@ export default function QuoteCalculator() {
                         <ArrowRight className="w-5 h-5 ml-2" />
                       </Button>
 
-                      <div className="flex gap-3">
-                        <Button variant="outline" className="flex-1" onClick={() => {
-                          const { text, total } = getQuoteSummary();
-                          let copyText = `[블랙스텐 + 안전방충망 혼합 견적서]\n\n${text}\n\n[안내사항]\n`;
-                          PRODUCT_NOTICES["mixed"].forEach((n) => { copyText += `• ${n}\n`; });
-                          copyText += `\n문자문의: Kobang 010-5638-3869`;
-                          navigator.clipboard.writeText(copyText);
-                          setCopied(true);
-                          setTimeout(() => setCopied(false), 2000);
-                        }}>
-                          {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
-                          {copied ? "복사됨" : "견적 복사"}
-                        </Button>
-                        <Button variant="outline" className="flex-1" onClick={captureQuote} disabled={capturing}>
-                          <Camera className="w-4 h-4 mr-2" />
-                          {capturing ? "캡처 중..." : "견적 캡처"}
-                        </Button>
-                      </div>
+                      <button
+                        onClick={() => setShowShareButtons(!showShareButtons)}
+                        className="text-xs text-muted-foreground w-full text-center py-1"
+                      >
+                        {showShareButtons ? "견적 복사/캡처 숨기기 ▲" : "견적 복사/캡처 ▼"}
+                      </button>
+                      {showShareButtons && (
+                        <div className="flex gap-3">
+                          <Button variant="outline" className="flex-1" onClick={() => {
+                            const { text, total } = getQuoteSummary();
+                            let copyText = `[블랙스텐 + 안전방충망 혼합 견적서]\n\n${text}\n\n[안내사항]\n`;
+                            PRODUCT_NOTICES["mixed"].forEach((n) => { copyText += `• ${n}\n`; });
+                            copyText += `\n문자문의: Kobang 010-5638-3869`;
+                            navigator.clipboard.writeText(copyText);
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 2000);
+                          }}>
+                            {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
+                            {copied ? "복사됨" : "견적 복사"}
+                          </Button>
+                          <Button variant="outline" className="flex-1" onClick={captureQuote} disabled={capturing}>
+                            <Camera className="w-4 h-4 mr-2" />
+                            {capturing ? "캡처 중..." : "견적 캡처"}
+                          </Button>
+                        </div>
+                      )}
 
                       <Card className="bg-secondary/50">
                         <CardContent className="p-4">

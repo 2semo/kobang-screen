@@ -197,7 +197,7 @@ export default function QuoteCalculator() {
 
     const { text: quoteSummary, total } = getQuoteSummary();
 
-    fetch("https://ip-api.com/json/?fields=regionName,city,status&lang=ko")
+    fetch("/api/geo")
       .then((r) => r.json())
       .then((geo) => {
         void saveQuoteMutation({

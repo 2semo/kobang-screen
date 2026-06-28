@@ -900,6 +900,15 @@ export default function QuoteCalculator() {
                           대형(높이 1600mm 이상)과 중형(높이 1600mm 미만) 혼합 선택 가능
                         </p>
 
+                        {/* 대형/중형 구분 참고 이미지 */}
+                        <div className="rounded-xl overflow-hidden border border-gray-200">
+                          <img
+                            src="/size-guide.png"
+                            alt="대형(1600mm 이상) / 중형(1600mm 미만) 구분 기준"
+                            className="w-full object-contain"
+                          />
+                        </div>
+
                         {/* 대형 카운터 */}
                         <div className="flex items-center justify-between p-4 bg-secondary/30 rounded-xl">
                           <div>

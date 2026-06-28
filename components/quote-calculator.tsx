@@ -90,13 +90,12 @@ interface QuoteState {
 const PRODUCT_NOTICES: Record<QuoteType, string[]> = {
   safetyScreen: [
     "최종 금액은 방문 실측 후 확정될 수 있습니다.",
+    "서울·경기 지역만 시공 가능합니다.",
     "특수 창호/사이즈는 별도 실측후 견적 가능 (기본가격은 슬라이딩 도어)",
     "설치수량 2개 이하 / 지역에 따라서 추가 출장비 발생할 수 있습니다.",
     "모든 계산은 100mm(10cm) 단위 올림이 적용됩니다.",
   ],
   blackScreenMesh: [
-    "최종 금액은 방문 실측 후 확정될 수 있습니다.",
-    "서울·경기 지역만 시공 가능합니다.",
     "최소 시공가 20만원 이상만 가능합니다.",
     "특대창·특수창·실외기·방범창제거·설치난이도에 따라 별도 견적이 발생할 수 있습니다.",
     "이건창호는 제외됩니다.",
@@ -1263,7 +1262,7 @@ export default function QuoteCalculator() {
                         className="w-full h-14 text-lg font-bold"
                         onClick={() => goToStep(applyStep)}
                       >
-                        이 견적으로 시공 신청하기
+                        이 견적으로 문의하기
                         <ArrowRight className="w-5 h-5 ml-2" />
                       </Button>
 
@@ -1560,7 +1559,7 @@ export default function QuoteCalculator() {
                         className="w-full h-14 text-lg font-bold"
                         onClick={() => goToStep(applyStep)}
                       >
-                        이 견적으로 시공 신청하기
+                        이 견적으로 문의하기
                         <ArrowRight className="w-5 h-5 ml-2" />
                       </Button>
 
@@ -1722,7 +1721,7 @@ export default function QuoteCalculator() {
                       </Card>
 
                       <Button className="w-full h-14 text-lg font-bold" onClick={() => goToStep(applyStep)}>
-                        이 견적으로 시공 신청하기
+                        이 견적으로 문의하기
                         <ArrowRight className="w-5 h-5 ml-2" />
                       </Button>
 

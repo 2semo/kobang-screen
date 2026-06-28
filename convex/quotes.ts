@@ -54,7 +54,9 @@ export const getRegionStats = query({
   handler: async (ctx) => {
     const all = await ctx.db.query("quotes").collect()
     const byRegion = all.reduce((acc, q) => {
-      const key = q.region ?? "알 수 없음"
+      const region = q.region ?? "알 수 없음"
+      const city = q.city && q.city !== q.region ? q.city : null
+      const key = city ? `${region} · ${city}` : region
       acc[key] = (acc[key] || 0) + 1
       return acc
     }, {} as Record<string, number>)

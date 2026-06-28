@@ -6,6 +6,28 @@ import { api } from "@/convex/_generated/api";
 import { useRouter } from "next/navigation";
 import { Id } from "@/convex/_generated/dataModel";
 
+function buildCopyText(app: {
+  name: string; phone: string; address: string;
+  quoteType: string; quoteSummary: string; quoteTotal: number;
+  preferredDate?: string; memo?: string;
+}) {
+  const lines = [
+    `[코방 시공 신청]`,
+    `━━━━━━━━━━━━━━━━`,
+    `고객명: ${app.name}`,
+    `연락처: ${app.phone}`,
+    `주  소: ${app.address}`,
+    app.preferredDate ? `희망날짜: ${app.preferredDate}` : null,
+    app.memo ? `메  모: ${app.memo}` : null,
+    `━━━━━━━━━━━━━━━━`,
+    `[견적 내용]`,
+    app.quoteSummary,
+    `━━━━━━━━━━━━━━━━`,
+    `합계: ${app.quoteTotal.toLocaleString()}원`,
+  ].filter(Boolean);
+  return lines.join("\n");
+}
+
 const STATUS_LABELS: Record<string, { label: string; color: string }> = {
   new:        { label: "신규",   color: "bg-blue-100 text-blue-700" },
   consulting: { label: "상담중", color: "bg-yellow-100 text-yellow-700" },
@@ -34,6 +56,14 @@ export default function AdminPage() {
 
   const [selected, setSelected] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const handleCopy = (e: React.MouseEvent, app: typeof applications[0]) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(buildCopyText(app));
+    setCopied(app._id);
+    setTimeout(() => setCopied(null), 2000);
+  };
 
   const handleLogout = async () => {
     await fetch("/api/admin-login", { method: "DELETE" });
@@ -119,6 +149,18 @@ export default function AdminPage() {
                 {/* 상세 패널 */}
                 {selected === app._id && (
                   <div className="mt-4 pt-4 border-t space-y-3">
+                    {/* 복사 버튼 */}
+                    <button
+                      onClick={(e) => handleCopy(e, app)}
+                      className={`w-full py-2.5 rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2 ${
+                        copied === app._id
+                          ? "bg-green-500 text-white"
+                          : "bg-blue-600 text-white hover:bg-blue-700"
+                      }`}
+                    >
+                      {copied === app._id ? "✓ 복사됨!" : "📋 설치팀에 전달할 내용 복사"}
+                    </button>
+
                     <div className="text-sm space-y-1 text-gray-700">
                       {app.preferredDate && <p>📅 희망 날짜: {app.preferredDate}</p>}
                       {app.memo && <p>📝 메모: {app.memo}</p>}

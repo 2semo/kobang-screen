@@ -185,6 +185,16 @@ export default function QuoteCalculator() {
     quoteSavedRef.current = false;
   }, []);
 
+  // 블랙스텐 서비스 선택 step 진입 시 meshOnly 자동 선택
+  useEffect(() => {
+    const isBlackStep =
+      (state.quoteType === "blackScreenMesh" && state.step === 2) ||
+      (state.quoteType === "mixed" && state.step === 2);
+    if (isBlackStep && !state.blackScreenServiceType) {
+      updateState({ blackScreenServiceType: "meshOnly" });
+    }
+  }, [state.step, state.quoteType]);
+
   // 결과 페이지 도달 시 견적 저장 (1회만)
   useEffect(() => {
     const isOnResultStep =
@@ -858,7 +868,7 @@ export default function QuoteCalculator() {
                 <div className="space-y-3">
                   <h3 className="font-bold">{state.quoteType === "mixed" ? "① 블랙스텐망 교체 선택" : "서비스 종류"}</h3>
                   <div className="space-y-3">
-                    {blackScreenServiceOptions.filter(o => state.quoteType === "mixed" ? o.id !== "rollScreen" : true).map((option) => (
+                    {blackScreenServiceOptions.filter(o => o.id === "meshOnly").map((option) => (
                       <Card
                         key={option.id}
                         className={`cursor-pointer transition-all ${state.blackScreenServiceType === option.id ? "ring-2 ring-primary border-primary" : "hover:border-primary/50"}`}

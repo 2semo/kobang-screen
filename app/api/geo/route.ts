@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
-  // Netlify 실제 IP → x-forwarded-for 첫 번째 → x-real-ip 순서로 시도
   const ip =
+    request.headers.get("client-ip") ||
     request.headers.get("x-nf-client-connection-ip") ||
     request.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
     request.headers.get("x-real-ip") ||
@@ -14,8 +14,9 @@ export async function GET(request: NextRequest) {
       { cache: "no-store" }
     );
     const data = await res.json();
-    return NextResponse.json(data);
-  } catch {
-    return NextResponse.json({ status: "fail" });
+    // 디버그: 감지된 IP와 결과 함께 반환 (확인 후 제거 예정)
+    return NextResponse.json({ ...data, _ip: ip });
+  } catch (e) {
+    return NextResponse.json({ status: "fail", _ip: ip, _error: String(e) });
   }
 }

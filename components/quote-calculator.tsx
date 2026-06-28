@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -153,6 +155,10 @@ export default function QuoteCalculator() {
   const [appSubmitting, setAppSubmitting] = useState(false);
   const resultAreaRef = useRef<HTMLDivElement>(null);
 
+  const saveQuoteMutation = useMutation(api.quotes.saveQuote);
+  const saveApplicationMutation = useMutation(api.applications.saveApplication);
+  const quoteSavedRef = useRef(false);
+
   const updateState = useCallback((updates: Partial<QuoteState>) => {
     setState((prev) => ({ ...prev, ...updates }));
   }, []);
@@ -176,7 +182,30 @@ export default function QuoteCalculator() {
     setState(initialState);
     setAppForm({ name: "", phone: "", address: "", preferredDate: "", memo: "" });
     setAppSubmitted(false);
+    quoteSavedRef.current = false;
   }, []);
+
+  // 결과 페이지 도달 시 견적 저장 (1회만)
+  useEffect(() => {
+    const isOnResultStep =
+      (state.quoteType === "blackScreenMesh" && state.step === 3) ||
+      (state.quoteType === "safetyScreen" && state.step === 6) ||
+      (state.quoteType === "mixed" && state.step === 7);
+
+    if (!isOnResultStep || quoteSavedRef.current) return;
+    quoteSavedRef.current = true;
+
+    const { text: quoteSummary, total } = getQuoteSummary();
+    void saveQuoteMutation({
+      quoteType: state.quoteType ?? "",
+      brand: state.brand ?? undefined,
+      meshType: state.meshType ?? undefined,
+      installType: state.installType ?? undefined,
+      total,
+      quoteSummary,
+    }).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.step, state.quoteType]);
 
   const selectBrand = useCallback(
     (brand: BrandType) => {
@@ -451,18 +480,30 @@ export default function QuoteCalculator() {
     setAppSubmitting(true);
     const { text: quoteSummary, total: quoteTotal } = getQuoteSummary();
     try {
-      await fetch("/api/submit-application", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quoteType: state.quoteType, quoteSummary, quoteTotal, ...appForm }),
-      });
+      await Promise.all([
+        fetch("/api/submit-application", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ quoteType: state.quoteType, quoteSummary, quoteTotal, ...appForm }),
+        }),
+        saveApplicationMutation({
+          name: appForm.name,
+          phone: appForm.phone,
+          address: appForm.address,
+          preferredDate: appForm.preferredDate || undefined,
+          memo: appForm.memo || undefined,
+          quoteType: state.quoteType ?? "",
+          quoteSummary,
+          quoteTotal,
+        }),
+      ]);
     } catch {
       // 제출 실패해도 성공 화면 표시
     } finally {
       setAppSubmitting(false);
       setAppSubmitted(true);
     }
-  }, [canSubmitApp, getQuoteSummary, appForm, state.quoteType]);
+  }, [canSubmitApp, getQuoteSummary, appForm, state.quoteType, saveApplicationMutation]);
 
   const isApplyFormStep =
     (state.quoteType === "blackScreenMesh" && state.step === 4) ||
